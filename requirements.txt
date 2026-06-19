@@ -1,4 +1,4 @@
 streamlit
-git+https://github.com/gee-community/geemap.git
+geemap
 earthengine-api
-setuptools
+xyzservices==2023.10.1
