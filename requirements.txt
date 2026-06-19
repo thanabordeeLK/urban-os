@@ -1,4 +1,4 @@
 streamlit
-geemap==0.29.6
-python-box==6.1.0
+git+https://github.com/gee-community/geemap.git
 earthengine-api
+setuptools
