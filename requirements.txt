@@ -1,3 +1,4 @@
 streamlit
-geemap
+geemap==0.29.6
+python-box==6.1.0
 earthengine-api
