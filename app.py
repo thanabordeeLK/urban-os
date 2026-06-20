@@ -3,6 +3,7 @@ import geemap.foliumap as geemap
 import ee
 import os
 from streamlit_option_menu import option_menu
+from streamlit_folium import st_folium 
 
 # 1. ตั้งค่าหน้าเว็บให้แสดงผลแบบเต็มจอ
 st.set_page_config(layout="wide", page_title="Urban OS", page_icon="🌐")
@@ -98,7 +99,19 @@ except Exception as e:
     st.stop()
 
 # สร้างแผนที่หลัก (ปรับพิกัดศูนย์กลางมาที่ประเทศไทย และ Zoom out ออกมา)
-Map = geemap.Map(center=[15.87, 100.99], zoom=6, ee_initialize=False)
+# ---------------------------------------------------------
+# ระบบดึงพิกัดและความจำแผนที่ (Session State)
+# ---------------------------------------------------------
+map_center = [15.87, 100.99] # ค่าเริ่มต้น (ประเทศไทย)
+map_zoom = 6
+
+# ถ้าระบบเคยจำพิกัดไว้แล้ว ให้ดึงพิกัดล่าสุดมาใช้
+if "urban_map" in st.session_state and st.session_state["urban_map"].get("center"):
+    map_center = [st.session_state["urban_map"]["center"]["lat"], st.session_state["urban_map"]["center"]["lng"]]
+    map_zoom = st.session_state["urban_map"]["zoom"]
+
+# สร้างแผนที่หลักจากพิกัดล่าสุด
+Map = geemap.Map(center=map_center, zoom=map_zoom, ee_initialize=False)
 
 # 4. จัดการแถบเมนูด้านข้าง (Sidebar) แบบล้ำสมัย (แก้สีเมนูแล้ว)
 with st.sidebar:
@@ -199,5 +212,11 @@ with st.sidebar:
         if st.button("▶️ RUN AI ENGINE"):
             st.success("Compute Engine Active: กำลังเตรียมทรัพยากรประมวลผล...")
 
-# 5. แสดงผลแผนที่หลัก
-Map.to_streamlit(height=700)
+# 5. แสดงผลแผนที่หลัก และเปิดระบบดักจับพิกัด
+st_folium(
+    Map, 
+    key="urban_map", # ชื่อหน่วยความจำที่ตั้งไว้เชื่อมโยงกับโค้ดด้านบน
+    height=700, 
+    use_container_width=True,
+    returned_objects=["center", "zoom"] # ให้ระบบส่งค่าแค่พิกัดและระยะซูมกลับมาเพื่อลดความหน่วง
+)
