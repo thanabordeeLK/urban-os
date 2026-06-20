@@ -3,17 +3,15 @@ import geemap.foliumap as geemap
 import ee
 import os
 import pandas as pd
-from streamlit_option_menu import option_menu
 
 # 1. ตั้งค่าหน้าเว็บ
 st.set_page_config(layout="wide", page_title="Urban OS", page_icon="🌐")
 
 # ==========================================
-# 🎨 2. ฝัง CSS ตกแต่ง UI และขยายพื้นที่จอ
+# 🎨 2. ฝัง CSS ตกแต่ง UI สไตล์ AI Cyberpunk
 # ==========================================
 st.markdown("""
 <style>
-    /* ลดช่องว่างขอบจอ เพื่อให้แผนที่ใหญ่เต็มตาขึ้น */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 0rem !important;
@@ -59,7 +57,7 @@ except Exception as e:
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown("<h3 style='text-align: center; margin-bottom: 20px;'>⚙️ CONTROL PANEL</h3>", unsafe_allow_html=True)
-    
+    from streamlit_option_menu import option_menu
     selected_mode = option_menu(
         menu_title=None, 
         options=["General Plan", "AI Simulation"],
@@ -109,7 +107,6 @@ with st.sidebar:
         else:
             roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
 
-    # --- เลือก Basemap ตั้งแต่ตรงนี้เพื่อป้องกันบั๊ก HYBRID บังชั้นข้อมูล ---
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
     if selected_mode == "General Plan":
         st.markdown("### 🥞 Data Layers (ชั้นข้อมูล)")
@@ -118,7 +115,7 @@ with st.sidebar:
         basemap_choice = "SATELLITE"
 
 # ---------------------------------------------------------
-# สร้างตัวแผนที่ (ใส่ Basemap เข้าไปเป็นรากฐานตั้งแต่แรกเกิด)
+# สร้างตัวแผนที่หลัก
 # ---------------------------------------------------------
 Map = geemap.Map(center=[15.87, 100.99], zoom=6, basemap=basemap_choice, ee_initialize=False)
 
@@ -126,11 +123,11 @@ if not is_whole_country:
     Map.centerObject(roi)
     Map.addLayer(ee.Image().paint(roi, 0, 2), {'palette': ['00F2FE']}, f'Boundary')
 
-# ---------------------------------------------------------
-# จัดการชั้นข้อมูลและ Unified Legend
-# ---------------------------------------------------------
-master_legend = {} # ตะกร้ารวมสัญลักษณ์ ป้องกันกล่องซ้อนกัน
+master_legend = {}
 
+# ---------------------------------------------------------
+# บล็อกควบคุมตามโหมดการทำงาน
+# ---------------------------------------------------------
 with st.sidebar:
     if selected_mode == "General Plan":
         st.markdown("**🌍 ข้อมูลภูมิประเทศ & แหล่งน้ำ**")
@@ -160,17 +157,11 @@ with st.sidebar:
         show_pop = st.checkbox("👥 GHSL: Global Population", value=False)
         if show_pop: op_pop = st.slider("ความโปร่งแสง ประชากร", 0.0, 1.0, 0.7)
 
-        # ---------------------------------------------------------
-        # ระบบโหลดข้อมูล & เติมข้อมูลลง Master Legend
-        # ---------------------------------------------------------
-
+        # เรนเดอร์ชั้นข้อมูลฝั่ง แพลนทั่วไป
         if show_cop_dem:
             dem = ee.ImageCollection("COPERNICUS/DEM/GLO30").select('DEM').mosaic()
             if not is_whole_country: dem = dem.clip(roi)
-            dem_vis = {'min': 0, 'max': 1000, 'palette': ['006633', 'E5FFCC', '662A00', 'D8D8D8', 'F5F5F5']}
-            Map.addLayer(dem, dem_vis, 'Copernicus DEM 30m', opacity=op_cop_dem)
-            try: Map.add_colorbar(dem_vis, label="ความสูง (เมตร)", layer_name="Copernicus DEM")
-            except: pass
+            Map.addLayer(dem, {'min': 0, 'max': 1000, 'palette': ['006633', 'E5FFCC', '662A00', 'D8D8D8', 'F5F5F5']}, 'Copernicus DEM 30m', opacity=op_cop_dem)
 
         if show_dswx_s1:
             try:
@@ -178,65 +169,49 @@ with st.sidebar:
                 if not is_whole_country: img = img.clip(roi)
                 wtr_remapped = img.remap([0, 1, 2, 252, 253, 254], [0, 1, 2, 3, 4, 5])
                 Map.addLayer(wtr_remapped, {'min': 0, 'max': 5, 'palette': ['ffffff', '0000ff', '0088ff', 'f2f2f2', 'dfdfdf', 'da00ff']}, 'DSWx-S1', opacity=op_dswx_s1)
-                # เพิ่มลงกล่องอธิบายรวม
                 master_legend.update({'[น้ำ] ผิวดิน (Radar)': '0000ff', '[น้ำ] ท่วมขัง (Radar)': '0088ff'})
-            except: st.warning("⚠️ ไม่พบข้อมูล DSWx-S1 ในบริเวณนี้")
+            except: pass
 
         if show_gfd:
             try:
                 gfdFloodedSum = ee.ImageCollection('GLOBAL_FLOOD_DB/MODIS_EVENTS/V1').filterBounds(roi).select('flooded').sum()
                 if not is_whole_country: gfdFloodedSum = gfdFloodedSum.clip(roi)
-                durationPalette = ['c3effe', '1341e8', '051cb0', '001133']
-                Map.addLayer(gfdFloodedSum.selfMask(), {'min': 0, 'max': 10, 'palette': durationPalette}, 'GFD Flood History', opacity=op_gfd)
-                try: Map.add_colorbar({'min': 0, 'max': 10, 'palette': durationPalette}, label="ความถี่น้ำท่วมสะสม", layer_name="Flood DB")
-                except: pass
-            except: st.warning("⚠️ ไม่พบประวัติน้ำท่วมในบริเวณนี้")
+                Map.addLayer(gfdFloodedSum.selfMask(), {'min': 0, 'max': 10, 'palette': ['c3effe', '1341e8', '051cb0', '001133']}, 'GFD Flood History', opacity=op_gfd)
+            except: pass
 
         if show_landcover:
             landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
             if not is_whole_country: landcover = landcover.clip(roi)
             Map.addLayer(landcover, {}, 'ESA Land Use', opacity=op_landcover)
-            # เพิ่มลงกล่องอธิบายรวม
             master_legend.update({'[ESA] เมือง/สร้าง': 'fa0000', '[ESA] เกษตร': 'f096ff', '[ESA] ป่าไม้': '006400', '[ESA] แหล่งน้ำ': '0064c8'})
 
         if show_dw:
             dw_image = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi).filterDate('2023-01-01', '2024-01-01').select('label').mode()
             if not is_whole_country: dw_image = dw_image.clip(roi)
             Map.addLayer(dw_image, {'min': 0, 'max': 8, 'palette': ['419bdf', '397d49', '88b053', '7a87c6', 'e49635', 'dfc35a', 'c4281b', 'a59b8f', 'b39fe1']}, 'Dynamic World', opacity=op_dw)
-            # เพิ่มลงกล่องอธิบายรวม
             master_legend.update({'[DW] แหล่งน้ำ': '419bdf', '[DW] ต้นไม้': '397d49', '[DW] สิ่งปลูกสร้าง': 'c4281b'})
 
         if show_chirts:
             max_temp = ee.ImageCollection('UCSB-CHG/CHIRTS/DAILY').filter(ee.Filter.date('2016-05-01', '2016-05-31')).select('maximum_temperature').mean()
             if not is_whole_country: max_temp = max_temp.clip(roi)
-            temp_vis = {'min': 20, 'max': 40, 'palette': ['darkblue', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred']}
-            Map.addLayer(max_temp, temp_vis, 'CHIRTS Max Temp', opacity=op_chirts)
-            try: Map.add_colorbar(temp_vis, label="อุณหภูมิสูงสุด (°C)", layer_name="CHIRTS")
-            except: pass
+            Map.addLayer(max_temp, {'min': 20, 'max': 40, 'palette': ['darkblue', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred']}, 'CHIRTS Max Temp', opacity=op_chirts)
 
         if show_urban:
             urban_image = ee.Image("JRC/GHSL/P2023A/GHS_SMOD_V2-0/2030").select('smod_code')
             if not is_whole_country: urban_image = urban_image.clip(roi)
             Map.addLayer(urban_image, {}, 'Degree of Urbanization', opacity=op_urban)
-            # เพิ่มลงกล่องอธิบายรวม
             master_legend.update({'[เมือง] หนาแน่น': 'ff0000', '[เมือง] ปานกลาง': 'ffa500', '[เมือง] ชนบท': '00ff00'})
 
         if show_pop:
             pop_image = ee.Image('JRC/GHSL/P2023A/GHS_POP/2020')
             if not is_whole_country: pop_image = pop_image.clip(roi)
             pop_image = pop_image.updateMask(pop_image.gt(0))
-            pop_vis = {'min': 0.0, 'max': 100.0, 'palette': ['000004', '320A5A', '781B6C', 'BB3654', 'EC6824', 'FBB41A', 'FCFFA4']}
-            Map.addLayer(pop_image, pop_vis, 'Population Density', opacity=op_pop)
-            try: Map.add_colorbar(pop_vis, label="ความหนาแน่นประชากร (คน)", layer_name="Population")
-            except: pass
+            Map.addLayer(pop_image, {'min': 0.0, 'max': 100.0, 'palette': ['000004', '320A5A', '781B6C', 'BB3654', 'EC6824', 'FBB41A', 'FCFFA4']}, 'Population Density', opacity=op_pop)
 
-        # 🎯 เรนเดอร์กล่องสัญลักษณ์แบบรวม (Unified Legend) ใบเดียวจบ
         if master_legend:
-            try:
-                Map.add_legend(title="สัญลักษณ์ชั้นข้อมูล", legend_dict=master_legend)
+            try: Map.add_legend(title="สัญลักษณ์ชั้นข้อมูล", legend_dict=master_legend)
             except: pass
 
-        # 📊 สถิติ
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("### 📊 Area Statistics")
         if show_landcover and st.button("📈 คำนวณสถิติพื้นที่ (ESA)"):
@@ -245,37 +220,122 @@ with st.sidebar:
                 stats = landcover.reduceRegion(reducer=ee.Reducer.frequencyHistogram(), geometry=roi.geometry(), scale=calc_scale, maxPixels=1e13).getInfo()
                 if 'Map' in stats:
                     df = pd.DataFrame([{"ประเภทพื้นที่": {'10': 'ต้นไม้', '40': 'เกษตรกรรม', '50': 'เมือง', '80': 'แหล่งน้ำ'}.get(k, f"ประเภท {k}"), "ขนาด (ไร่)": v * (calc_scale**2) / 1600} for k, v in stats['Map'].items()])
-                    st.success("สำเร็จ!")
                     st.bar_chart(df.sort_values(by="ขนาด (ไร่)", ascending=False).set_index("ประเภทพื้นที่"))
 
+    # ==========================================
+    # 🧠 โหมดที่ 2: วิเคราะห์ขั้นสูง (AI Simulation) พร้อมระบบสกัดข้อมูล & พยากรณ์จริง
+    # ==========================================
     elif selected_mode == "AI Simulation":
         st.markdown("### 🏢 1. Import Data")
         uploaded_file = st.file_uploader("Upload Shapefile / KML", type=['zip', 'kml'])
         
         st.markdown("### 🔍 2. Spatial Analysis")
         analysis_type = st.selectbox("Model Type", ["Urban Growth Tracking", "Flood Risk Simulation"])
+        
         if analysis_type == "Urban Growth Tracking":
-            start_year = st.slider("เลือกปีเริ่มต้น (อดีต)", min_value=2014, max_value=2022, value=2015)
+            st.info("🧠 ระบบจะใช้โมเดลดึงข้อมูลอนุกรมเวลาเพื่อสแกนอัตราการขยายตัวของเมืองในอดีต และทำนายแนวโน้มอนาคตเชิงพื้นที่")
+            start_year = st.slider("เลือกปีเริ่มต้นในอดีต (เพื่อสร้างสมการ)", min_value=2014, max_value=2021, value=2015)
+        
+        st.markdown("### 📈 3. Predictive Modeling")
+        predict_years = st.slider("Forecast Timeline (จำนวนปีที่ทำนายไปข้างหน้า)", 1, 30, 10)
         
         st.markdown("### 🛡️ 4. Engineering Mitigation")
         sim_tool = st.radio("Simulation Tools", ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"])
+        
         run_ai = st.button("▶️ RUN AI ENGINE")
 
-        if analysis_type == "Urban Growth Tracking" and run_ai:
-            with st.spinner(f"🧠 ประมวลผลระหว่างปี {start_year} กับ 2023..."):
-                viirs_past = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG').filterDate(f'{start_year}-01-01', f'{start_year}-12-31').median().select('avg_rad')
-                viirs_present = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG').filterDate('2023-01-01', '2023-12-31').median().select('avg_rad')
-                
-                if not is_whole_country:
-                    viirs_past = viirs_past.clip(roi)
-                    viirs_present = viirs_present.clip(roi)
-                    
-                urban_growth = viirs_present.gt(3).And(viirs_past.gt(3).Not())
-                Map.addLayer(viirs_present, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Nighttime Lights 2023', False)
-                Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, f'New Growth ({start_year}-2023)')
-                try: Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict={f'เมืองขยายตัวใหม่ ({start_year}-2023)': 'FF007F'})
-                except: pass
-                st.toast("จำลองโมเดลเสร็จสิ้น!", icon="✨")
+# ---------------------------------------------------------
+# ส่วนสมองกลประมวลผลอนุกรมเวลา และวาดกราฟทำนาย (หลังแผนที่รัน)
+# ---------------------------------------------------------
+df_trend = None # กล่องเก็บข้อมูลสำหรับพล็อตข้อความด้านล่าง
 
-# 5. แสดงผลแผนที่หลัก (ปรับความสูงเป็น 900 เพื่อให้กางเต็มขอบจอด้านล่าง)
+if selected_mode == "AI Simulation" and analysis_type == "Urban Growth Tracking" and run_ai:
+    with st.spinner("🧠 Step 1/2: กำลังรัน Multi-Band Extraction ดึงข้อมูลอนุกรมเวลาจากดาวเทียม..."):
+        try:
+            # สร้างลิสต์ปีตั้งแต่อดีตจนถึงปัจจุบัน (2023)
+            current_max_year = 2023
+            years = list(range(start_year, current_max_year + 1))
+            image_list = []
+            
+            # มัดรวมภาพแต่ละปีเข้าเป็นแบนด์ย่อย เพื่อส่งประมวลผลรอบเดียว
+            for y in years:
+                img_year = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+                    .filterDate(f'{y}-01-01', f'{y}-12-31').median().select('avg_rad').rename(f'yr_{y}')
+                image_list.append(img_year)
+            
+            multi_band_img = ee.Image.cat(image_list)
+            
+            # ยิงคำสั่งรวดเดียวขึ้นคลาวด์เพื่อหาค่าเฉลี่ยแสงไฟรายปีของพื้นที่
+            calc_scale = 1000 if is_whole_country else 300
+            raw_stats = multi_band_img.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=roi.geometry(),
+                scale=calc_scale,
+                maxPixels=1e13
+            ).getInfo()
+            
+            # จัดข้อมูลดิบลงตาราง Pandas DataFrame
+            time_series_data = []
+            for y in years:
+                val = raw_stats.get(f'yr_{y}', 0)
+                time_series_data.append({"Year": y, "Intensity": val})
+            
+            df_history = pd.DataFrame(time_series_data)
+            
+            st.toast("⚡ สกัดข้อมูลอนุกรมเวลาอดีตสำเร็จ! กำลังคำนวณโมเดลพยากรณ์...", icon="🤖")
+            
+            # --- 🤖 STEP 2: สมการคณิตศาสตร์ทำนายอนาคต (Linear Regression Predictor) ---
+            X = df_history['Year'].values
+            Y = df_history['Intensity'].values
+            n = len(X)
+            
+            # คำนวณหาความชัน (m) และจุดตัดแกน (c) ตามสูตรกำลังสองน้อยที่สุด (Least Squares)
+            m = (n * (X*Y).sum() - X.sum()*Y.sum()) / (n * (X**2).sum() - (X.sum())**2)
+            c = (Y.sum() - m * X.sum()) / n
+            
+            # สร้างตารางสำหรับพยากรณ์อนาคตพุ่งไปข้างหน้าตามจำนวนปีที่ผู้ใช้เลือก
+            future_years = list(range(current_max_year + 1, current_max_year + predict_years + 1))
+            all_years = years + future_years
+            
+            final_chart_data = []
+            for y in all_years:
+                # เส้นประวัติศาสตร์จริง
+                hist_val = float(df_history[df_history['Year'] == y]['Intensity'].values[0]) if y <= current_max_year else None
+                # เส้นทำนายจากสมองกล AI
+                pred_val = m * y + c
+                
+                final_chart_data.append({
+                    "ปี พ.ศ./ค.ศ.": str(y),
+                    "ข้อมูลจริงจากดาวเทียม (Historical)": hist_val,
+                    "เส้นแนวโน้มพยากรณ์โดย AI (Forecast)": pred_val
+                })
+            
+            df_trend = pd.DataFrame(final_chart_data)
+            
+            # วาดเลเยอร์พื้นที่เติบโตล่าสุดลงแผนที่เพื่อความสมจริง
+            latest_img = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG').filterDate('2023-01-01', '2023-12-31').median().select('avg_rad')
+            if not is_whole_country: latest_img = latest_img.clip(roi)
+            Map.addLayer(latest_img, {'min': 0, 'max': 15, 'palette': ['black', 'purple', '#00F2FE']}, 'AI Analyzed: Economic Activity')
+            try: Map.add_legend(title="GEO AI Result", legend_dict={'พื้นที่กิจกรรมเศรษฐกิจหนาแน่น': '00F2FE'})
+            except: pass
+            
+        except Exception as e:
+            st.error(f"❌ ระบบ AI ขัดข้องชั่วคราว: {e}")
+
+# 5. แสดงผลแผนที่หลัก (ความสูง 900px ยาวสะใจเต็มจอล่าง)
 Map.to_streamlit(height=900)
+
+# ---------------------------------------------------------
+# 📊 ส่วนแสดงผลกราฟเส้นพยากรณ์อนาคต (แสดงใต้แผนที่อย่างเป็นระเบียบ)
+# ---------------------------------------------------------
+if df_trend is not None:
+    st.markdown("### 📈 ผลลัพธ์การสกัดข้อมูลอนุกรมเวลา และเส้นทางทำนายอนาคต (Predictive Timeline)")
+    st.markdown(f"วิเคราะห์ขอบเขตพื้นที่เป้าหมายแบบจำลองข้อมูลสะสมย้อนหลังตั้งแต่ปี {start_year} และลากเส้นพยากรณ์โครงสร้างเมืองล่วงหน้าไปอีก {predict_years} ปี")
+    
+    # พล็อตสองเส้นพร้อมกันอ้างอิงจากคอลัมน์ที่เราคำนวณไว้
+    chart_df = df_trend.set_index("ปี พ.ศ./ค.ศ.")
+    st.line_chart(chart_df)
+    
+    # แสดงคำอธิบายสถิติเชิงปริมาณเพิ่มความน่าเชื่อถือ
+    with st.expander("🔍 ดูตารางตัวเลขผลลัพธ์เชิงลึก (Data Sheets)"):
+        st.dataframe(df_trend, use_container_width=True, hide_index=True)
