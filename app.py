@@ -50,17 +50,20 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------
-# ระบบดักจับพิกัดและความจำแผนที่ (แก้ปัญหาแผนที่เด้งกลับ)
+# ระบบดักจับพิกัดและความจำแผนที่ (ป้องกันแผนที่เด้งกลับและจอดำ)
 # ---------------------------------------------------------
 map_center = [15.87, 100.99]
 map_zoom = 6
 
-if "urban_map" in st.session_state and st.session_state["urban_map"] is not None:
-    state = st.session_state["urban_map"]
-    if "center" in state and state["center"] is not None:
-        map_center = [state["center"]["lat"], state["center"]["lng"]]
-    if "zoom" in state and state["zoom"] is not None:
-        map_zoom = state["zoom"]
+try:
+    if "urban_map" in st.session_state and st.session_state["urban_map"] is not None:
+        state = st.session_state["urban_map"]
+        if state.get("center") is not None:
+            map_center = [float(state["center"]["lat"]), float(state["center"]["lng"])]
+        if state.get("zoom") is not None:
+            map_zoom = int(state["zoom"])
+except Exception:
+    pass # ป้องกันจอดำหากข้อมูลพิกัดเสียหาย
 
 Map = geemap.Map(center=map_center, zoom=map_zoom, ee_initialize=False)
 
@@ -121,16 +124,22 @@ with st.sidebar:
             roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
 
     # วาดเส้นขอบเขต
-    Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary')
+    Map.addLayer(ee.Image().paint(roi, 0, 2), {'palette': ['00F2FE']}, f'Boundary')
 
-    # ระบบบังคับซูมเฉพาะตอนเปลี่ยนจังหวัด/อำเภอ
+    # ระบบบังคับซูมเฉพาะตอนเปลี่ยนจังหวัด/อำเภอ (แก้ปัญหาจอดำตอนดึงข้อมูลทั้งประเทศ)
     if "last_location" not in st.session_state:
         st.session_state["last_location"] = (selected_province, selected_district)
-        Map.centerObject(roi)
+        if selected_province == "-- ประเทศไทย (รวมทุกจังหวัด) --":
+            Map.setCenter(100.99, 15.87, 6) # ล็อกเป้าแบบรวดเร็ว ไม่ต้องคำนวณ ROI
+        else:
+            Map.centerObject(roi)
     else:
         if st.session_state["last_location"] != (selected_province, selected_district):
             st.session_state["last_location"] = (selected_province, selected_district)
-            Map.centerObject(roi)
+            if selected_province == "-- ประเทศไทย (รวมทุกจังหวัด) --":
+                Map.setCenter(100.99, 15.87, 6)
+            else:
+                Map.centerObject(roi)
 
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
@@ -170,14 +179,15 @@ with st.sidebar:
         if show_pop: op_pop = st.slider("ความโปร่งแสง ประชากร", 0.0, 1.0, 0.7)
 
         # ---------------------------------------------------------
-        # ประมวลผลและสร้างกล่องคำอธิบายสี (Legends)
+        # ประมวลผลและสร้างกล่องคำอธิบายสี (Legends) พร้อมระบบป้องกัน (Try-Except)
         # ---------------------------------------------------------
 
         if show_cop_dem:
             dem = ee.ImageCollection("COPERNICUS/DEM/GLO30").select('DEM').mosaic().clip(roi)
             dem_vis = {'min': 0, 'max': 1000, 'palette': ['006633', 'E5FFCC', '662A00', 'D8D8D8', 'F5F5F5']}
             Map.addLayer(dem, dem_vis, 'Copernicus DEM 30m', opacity=op_cop_dem)
-            Map.add_colorbar(dem_vis, label="ความสูง (เมตร)", layer_name="Copernicus DEM")
+            try: Map.add_colorbar(dem_vis, label="ความสูง (เมตร)", layer_name="Copernicus DEM")
+            except: pass
 
         if show_dswx_s1:
             try:
@@ -186,7 +196,8 @@ with st.sidebar:
                 wtr_remapped = img.remap([0, 1, 2, 252, 253, 254], [0, 1, 2, 3, 4, 5])
                 wtr_palette = ['ffffff', '0000ff', '0088ff', 'f2f2f2', 'dfdfdf', 'da00ff']
                 Map.addLayer(wtr_remapped, {'min': 0, 'max': 5, 'palette': wtr_palette}, 'DSWx-S1', opacity=op_dswx_s1)
-                Map.add_legend(title="DSWx-S1 สถานะน้ำ", legend_dict={'แหล่งน้ำผิวดิน (Open Water)': '0000ff', 'น้ำท่วมขังบางส่วน (Partial)': '0088ff'})
+                try: Map.add_legend(title="DSWx-S1 สถานะน้ำ", legend_dict={'แหล่งน้ำผิวดิน (Open Water)': '0000ff', 'น้ำท่วมขังบางส่วน (Partial)': '0088ff'})
+                except: pass
             except Exception as e:
                 st.warning("⚠️ ไม่พบข้อมูลดาวเทียม DSWx-S1 ในพื้นที่/ช่วงเวลานี้")
 
@@ -196,7 +207,8 @@ with st.sidebar:
                 gfdFloodedSum = gfd.select('flooded').sum().clip(roi)
                 durationPalette = ['c3effe', '1341e8', '051cb0', '001133']
                 Map.addLayer(gfdFloodedSum.selfMask(), {'min': 0, 'max': 10, 'palette': durationPalette}, 'GFD Flood History', opacity=op_gfd)
-                Map.add_colorbar({'min': 0, 'max': 10, 'palette': durationPalette}, label="ความถี่น้ำท่วมสะสม", layer_name="Flood DB")
+                try: Map.add_colorbar({'min': 0, 'max': 10, 'palette': durationPalette}, label="ความถี่น้ำท่วมสะสม", layer_name="Flood DB")
+                except: pass
             except:
                 st.warning("⚠️ ไม่พบประวัติน้ำท่วมในบริเวณนี้")
 
@@ -207,7 +219,8 @@ with st.sidebar:
                 'สิ่งปลูกสร้าง/เมือง': 'fa0000', 'พื้นที่เกษตรกรรม': 'f096ff', 'ต้นไม้/ป่าไม้': '006400', 
                 'ทุ่งหญ้า': 'ffff4c', 'พุ่มไม้': 'ffbb22', 'แหล่งน้ำ': '0064c8', 'พื้นที่ชุ่มน้ำ': '0096a0'
             }
-            Map.add_legend(title="การใช้ที่ดิน (ESA)", legend_dict=esa_legend_dict)
+            try: Map.add_legend(title="การใช้ที่ดิน (ESA)", legend_dict=esa_legend_dict)
+            except: pass
 
         if show_dw:
             dw_col = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi).filterDate('2023-01-01', '2024-01-01')
@@ -215,36 +228,40 @@ with st.sidebar:
             dw_vis = {'min': 0, 'max': 8, 'palette': ['419bdf', '397d49', '88b053', '7a87c6', 'e49635', 'dfc35a', 'c4281b', 'a59b8f', 'b39fe1']}
             Map.addLayer(dw_image, dw_vis, 'Dynamic World', opacity=op_dw)
             dw_leg = {'แหล่งน้ำ': '419bdf', 'ต้นไม้': '397d49', 'หญ้า': '88b053', 'เกษตรกรรม': 'e49635', 'สิ่งปลูกสร้าง': 'c4281b'}
-            Map.add_legend(title="Dynamic World", legend_dict=dw_leg)
+            try: Map.add_legend(title="Dynamic World", legend_dict=dw_leg)
+            except: pass
 
         if show_chirts:
             chirts_dataset = ee.ImageCollection('UCSB-CHG/CHIRTS/DAILY').filter(ee.Filter.date('2016-05-01', '2016-05-31'))
             max_temp = chirts_dataset.select('maximum_temperature').mean().clip(roi)
             temp_vis = {'min': 20, 'max': 40, 'palette': ['darkblue', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred']}
             Map.addLayer(max_temp, temp_vis, 'CHIRTS Max Temp', opacity=op_chirts)
-            Map.add_colorbar(temp_vis, label="อุณหภูมิสูงสุด (°C)", layer_name="CHIRTS")
+            try: Map.add_colorbar(temp_vis, label="อุณหภูมิสูงสุด (°C)", layer_name="CHIRTS")
+            except: pass
 
         if show_urban:
             urban_image = ee.Image("JRC/GHSL/P2023A/GHS_SMOD_V2-0/2030").select('smod_code').clip(roi)
             Map.addLayer(urban_image, {}, 'Degree of Urbanization', opacity=op_urban)
             urban_leg = {'ศูนย์กลางเมือง (หนาแน่น)': 'ff0000', 'ชุมชนชานเมือง (ปานกลาง)': 'ffa500', 'ชนบท (เบาบาง)': '00ff00'}
-            Map.add_legend(title="ระดับความเป็นเมือง", legend_dict=urban_leg)
+            try: Map.add_legend(title="ระดับความเป็นเมือง", legend_dict=urban_leg)
+            except: pass
 
         if show_pop:
             pop_image = ee.Image('JRC/GHSL/P2023A/GHS_POP/2020').clip(roi)
             pop_image = pop_image.updateMask(pop_image.gt(0))
             pop_vis = {'min': 0.0, 'max': 100.0, 'palette': ['000004', '320A5A', '781B6C', 'BB3654', 'EC6824', 'FBB41A', 'FCFFA4']}
             Map.addLayer(pop_image, pop_vis, 'Population Density', opacity=op_pop)
-            Map.add_colorbar(pop_vis, label="ความหนาแน่นประชากร (คน)", layer_name="Population")
+            try: Map.add_colorbar(pop_vis, label="ความหนาแน่นประชากร (คน)", layer_name="Population")
+            except: pass
 
         # 📊 สถิติ
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("### 📊 Area Statistics")
-        if show_landcover and st.button("📈 คำนวณสถิติพื้นที่"):
+        if show_landcover and st.button("📈 คำนวณสถิติพื้นที่ (ESA)"):
             with st.spinner("AI กำลังสแกนพื้นที่..."):
                 stats = landcover.reduceRegion(reducer=ee.Reducer.frequencyHistogram(), geometry=roi.geometry(), scale=100, maxPixels=1e9).getInfo()
                 if 'Map' in stats:
-                    df = pd.DataFrame([{"ประเภทพื้นที่": {'10': 'ต้นไม้', '40': 'เกษตรกรรม', '50': 'เมือง'}.get(k, f"ประเภท {k}"), "ขนาด (ไร่)": v * 6.25} for k, v in stats['Map'].items()])
+                    df = pd.DataFrame([{"ประเภทพื้นที่": {'10': 'ต้นไม้', '40': 'เกษตรกรรม', '50': 'เมือง', '80': 'แหล่งน้ำ'}.get(k, f"ประเภท {k}"), "ขนาด (ไร่)": v * 6.25} for k, v in stats['Map'].items()])
                     st.success("สำเร็จ!")
                     st.bar_chart(df.sort_values(by="ขนาด (ไร่)", ascending=False).set_index("ประเภทพื้นที่"))
 
@@ -272,14 +289,20 @@ with st.sidebar:
                 urban_growth = viirs_present.gt(3).And(viirs_past.gt(3).Not())
                 Map.addLayer(viirs_present, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Nighttime Lights 2023', False)
                 Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, f'New Growth ({start_year}-2023)')
-                Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict={f'พื้นที่ขยายตัวใหม่ ({start_year}-2023)': 'FF007F'})
+                try: Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict={f'พื้นที่ขยายตัวใหม่ ({start_year}-2023)': 'FF007F'})
+                except: pass
                 st.toast("จำลองโมเดลเสร็จสิ้น!", icon="✨")
 
-# 5. ประมวลผลและแสดงแผนที่หลัก (ใช้ st_folium ให้สถานะเสถียรที่สุด)
-st_folium(
-    Map, 
-    key="urban_map", 
-    height=700, 
-    use_container_width=True,
-    returned_objects=["center", "zoom"]
-)
+# 5. ประมวลผลและแสดงแผนที่หลัก (พร้อมระบบป้องกันจอดำขั้นสุด)
+try:
+    st_folium(
+        Map, 
+        key="urban_map", 
+        height=700, 
+        use_container_width=True,
+        returned_objects=["center", "zoom"]
+    )
+except Exception as e:
+    st.error(f"เกิดข้อผิดพลาดในการโหลดแผนที่: {e}")
+    # ระบบ Fallback หาก Folium พัง ให้สลับไปใช้วิธีแสดงผลแบบดั้งเดิม
+    Map.to_streamlit(height=700)
