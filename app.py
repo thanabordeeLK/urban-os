@@ -189,8 +189,9 @@ with st.sidebar:
         
         # แสดงเมนูย่อยเฉพาะเมื่อเลือกโหมดติดตามการโตของเมือง
         if analysis_type == "Urban Growth Tracking":
-            st.info("💡 โมเดล AI จะวิเคราะห์การขยายตัวของเมืองจากความเข้มของแสงไฟและกิจกรรมทางเศรษฐกิจช่วงปี 2015 เทียบกับปัจจุบัน")
-            timeline = st.select_slider("ช่วงปีที่ต้องการเปรียบเทียบ", options=["2015 vs 2023"], value="2015 vs 2023")
+            st.info("💡 โมเดล AI จะวิเคราะห์การขยายตัวของเมืองจากความเข้มของแสงไฟและกิจกรรมทางเศรษฐกิจในอดีตเทียบกับปัจจุบัน (ปี 2023)")
+            # เปลี่ยนเป็น slider ปกติ เพื่อให้เลือกปีเปรียบเทียบได้อิสระ
+            start_year = st.slider("เลือกปีเริ่มต้น (อดีต) เพื่อเปรียบเทียบ", min_value=2014, max_value=2022, value=2015)
         
         st.markdown("### 📈 3. Predictive Modeling")
         predict_years = st.slider("Forecast Timeline (Years)", 1, 30, 5)
@@ -206,28 +207,28 @@ with st.sidebar:
 # 5. ประมวลผลแผนที่หลักและเปิดระบบดักจับพิกัด
 # หากมีการกดรัน AI Engine ในส่วนวิเคราะห์การเติบโตของเมือง
 if selected_mode == "AI Simulation" and analysis_type == "Urban Growth Tracking" and run_ai:
-    with st.spinner("🧠 GEO AI Engine กำลังประมวลผลการคำนวณความแตกต่างเชิงพื้นที่ย้อนหลัง..."):
-        # 1. ดึงข้อมูลแสงไฟปี 2015 (อดีต)
-        viirs_2015 = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
-            .filterDate('2015-01-01', '2015-12-31').median().select('avg_rad').clip(roi)
+    with st.spinner(f"🧠 GEO AI Engine กำลังประมวลผลการคำนวณความแตกต่างเชิงพื้นที่ระหว่างปี {start_year} กับ 2023..."):
+        # 1. ดึงข้อมูลแสงไฟปีอดีต (ตามที่ผู้ใช้เลื่อนสไลเดอร์เลือก)
+        viirs_past = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+            .filterDate(f'{start_year}-01-01', f'{start_year}-12-31').median().select('avg_rad').clip(roi)
             
         # 2. ดึงข้อมูลแสงไฟปี 2023 (ปัจจุบัน)
-        viirs_2023 = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+        viirs_present = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
             .filterDate('2023-01-01', '2023-12-31').median().select('avg_rad').clip(roi)
         
         # 3. ใช้ตรรกะ AI คัดกรองจุดที่โตขึ้น (ตั้งเกณฑ์ค่าความสว่างแสงไฟ > 3)
-        urban_past = viirs_2015.gt(3)
-        urban_present = viirs_2023.gt(3)
+        urban_past = viirs_past.gt(3)
+        urban_present = viirs_present.gt(3)
         
         # จุดที่ปัจจุบันมีแสงไฟ แต่ในอดีตไม่มี = พื้นที่เมืองขยายตัวใหม่ (New Growth)
         urban_growth = urban_present.And(urban_past.Not())
         
         # 4. แสดงผลชั้นข้อมูลลงบนแผนที่ด้วยสีชมพูนีออนสว่างวาบ
-        Map.addLayer(viirs_2023, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Base: Nighttime Lights 2023', False)
-        Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, '📈 New Urban Growth (พื้นที่ขยายตัวใหม่)')
+        Map.addLayer(viirs_present, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Base: Nighttime Lights 2023', False)
+        Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, f'📈 New Urban Growth ({start_year}-2023)')
         
         # ทำกล่องคำอธิบายสีสำหรับการเติบโตของเมือง
-        growth_legend = {'พื้นที่เมืองขยายตัวใหม่ (2015-2023)': 'FF007F'}
+        growth_legend = {f'พื้นที่ขยายตัวใหม่ ({start_year}-2023)': 'FF007F'}
         Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict=growth_legend)
         
         st.toast("🧠 AI จำลองโมเดลเสร็จสิ้น! แสดงแถบสีชมพูในจุดที่เมืองขยายตัว", icon="✨")
