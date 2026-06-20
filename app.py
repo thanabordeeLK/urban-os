@@ -53,7 +53,7 @@ with st.sidebar:
 
 # 4. ส่วนการแสดงผลแผนที่หลัก
 # กำหนดจุดศูนย์กลางที่อุตรดิตถ์ [Lat, Lon]
-Map = geemap.Map(center=[17.62, 100.09], zoom=10)
+Map = geemap.Map(center=[17.62, 100.09], zoom=10, ee_initialize=False)
 Map.add_basemap(basemap_choice)
 
 # แสดงเลเยอร์ DEM หากติ๊กเลือก
