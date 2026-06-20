@@ -45,11 +45,16 @@ st.markdown("""
     }
     /* -------------------------------------- */
 
-    /* ตกแต่งกรอบอัปโหลดไฟล์ให้เป็นสไตล์ AI */
+   /* ตกแต่งกรอบอัปโหลดไฟล์ให้เป็นสไตล์ AI และแก้ตัวหนังสืออ่านไม่ออก */
     [data-testid="stFileUploadDropzone"] {
-        background-color: #111A30 !important;
+        background-color: #0B132B !important;
         border: 2px dashed #00F2FE !important;
         border-radius: 10px;
+    }
+    /* บังคับให้ข้อความและไอคอนข้างในกล่องอัปโหลดเป็นสีสว่าง */
+    [data-testid="stFileUploadDropzone"] * {
+        color: #E2E8F0 !important;
+
     }
     /* ตกแต่งปุ่มกด */
     .stButton>button {
@@ -187,7 +192,8 @@ with st.sidebar:
         predict_years = st.slider("Forecast Timeline (Years)", 1, 30, 5)
         
         st.markdown("### 🛡️ 4. Engineering Mitigation")
-        sim_tool = st.radio("Simulation Tools", ["กั้นแนวคันดิน (ท่าเสา)", "จำลองฝายชะลอน้ำ (ท่าปลา)", "ปรับแก้ระดับตลิ่ง"])
+        # เอาชื่อพื้นที่เฉพาะออก เพื่อให้รองรับการวิเคราะห์ทุกพื้นที่
+        sim_tool = st.radio("Simulation Tools", ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"])
         
         st.write("") # เว้นบรรทัด
         if st.button("▶️ RUN AI ENGINE"):
