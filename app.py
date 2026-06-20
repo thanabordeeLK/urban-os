@@ -245,85 +245,109 @@ with st.sidebar:
         run_ai = st.button("▶️ RUN AI ENGINE")
 
 # ---------------------------------------------------------
-# ส่วนสมองกลประมวลผลอนุกรมเวลา และวาดกราฟทำนาย (หลังแผนที่รัน)
+# ส่วนสมองกลประมวลผลอนุกรมเวลา และวาดกราฟทำนาย (High-Resolution NDBI)
 # ---------------------------------------------------------
-df_trend = None # กล่องเก็บข้อมูลสำหรับพล็อตข้อความด้านล่าง
+df_trend = None 
 
 if selected_mode == "AI Simulation" and analysis_type == "Urban Growth Tracking" and run_ai:
-    with st.spinner("🧠 Step 1/2: กำลังรัน Multi-Band Extraction ดึงข้อมูลอนุกรมเวลาจากดาวเทียม..."):
+    st.toast("🚀 กำลังเชื่อมต่อดาวเทียม Landsat-8 (ความละเอียด 30m/พิกเซล)...", icon="🛰️")
+    
+    # สร้างหลอด Progress Bar เพื่อให้ผู้ใช้รู้สถานะการดึงข้อมูล 10 ปี
+    progress_text = "กำลังสแกนพื้นที่ด้วย AI..."
+    my_bar = st.progress(0, text=progress_text)
+    
+    with st.spinner("🧠 ขั้นตอนที่ 1/2: ดึงข้อมูลโครงสร้างพื้นฐานระดับ High-Res..."):
         try:
-            # สร้างลิสต์ปีตั้งแต่อดีตจนถึงปัจจุบัน (2023)
             current_max_year = 2023
             years = list(range(start_year, current_max_year + 1))
-            image_list = []
-            
-            # มัดรวมภาพแต่ละปีเข้าเป็นแบนด์ย่อย เพื่อส่งประมวลผลรอบเดียว
-            for y in years:
-                img_year = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
-                    .filterDate(f'{y}-01-01', f'{y}-12-31').median().select('avg_rad').rename(f'yr_{y}')
-                image_list.append(img_year)
-            
-            multi_band_img = ee.Image.cat(image_list)
-            
-            # ยิงคำสั่งรวดเดียวขึ้นคลาวด์เพื่อหาค่าเฉลี่ยแสงไฟรายปีของพื้นที่
-            calc_scale = 1000 if is_whole_country else 300
-            raw_stats = multi_band_img.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=roi.geometry(),
-                scale=calc_scale,
-                maxPixels=1e13
-            ).getInfo()
-            
-            # จัดข้อมูลดิบลงตาราง Pandas DataFrame
             time_series_data = []
-            for y in years:
-                val = raw_stats.get(f'yr_{y}', 0)
-                time_series_data.append({"Year": y, "Intensity": val})
             
+            ndbi_past = None
+            ndbi_present = None
+
+            # วนลูปดึงภาพดาวเทียม Landsat-8 ทีละปี เพื่อความแม่นยำสูง
+            for i, y in enumerate(years):
+                my_bar.progress((i + 1) / len(years), text=f"กำลังสกัดข้อมูลตึกและสิ่งปลูกสร้าง ปี {y}...")
+                
+                # 1. ดึงข้อมูล Landsat 8 (คัดกรองเมฆน้อยกว่า 30%)
+                l8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA") \
+                    .filterBounds(roi) \
+                    .filterDate(f'{y}-01-01', f'{y}-12-31') \
+                    .filter(ee.Filter.lt('CLOUD_COVER', 30))
+                
+                # 2. คำนวณ NDBI (ดัชนีสิ่งปลูกสร้าง) สมการ: (SWIR1 - NIR) / (SWIR1 + NIR)
+                def calc_ndbi(img):
+                    return img.normalizedDifference(['B6', 'B5']).rename('NDBI')
+                    
+                ndbi_year = l8.map(calc_ndbi).median().clip(clip_roi)
+                
+                # 3. คัดแยกเฉพาะพิกเซลที่เป็นสิ่งปลูกสร้าง (ค่า NDBI > 0)
+                built_up = ndbi_year.gt(0.0)
+                
+                # 4. แปลงจำนวนพิกเซลเป็นพื้นที่ตารางเมตร (sqm) และหารเป็น "ไร่"
+                area_image = built_up.multiply(ee.Image.pixelArea())
+                calc_scale = 30 # ความละเอียด 30 เมตร
+                
+                area_stats = area_image.reduceRegion(
+                    reducer=ee.Reducer.sum(),
+                    geometry=roi.geometry(),
+                    scale=calc_scale,
+                    maxPixels=1e13
+                ).getInfo()
+                
+                area_sqm = area_stats.get('NDBI', 0)
+                area_rai = area_sqm / 1600.0 if area_sqm else 0
+                
+                # บันทึกข้อมูลลงตาราง
+                time_series_data.append({"Year": y, "Intensity": area_rai}) 
+                
+                # เก็บฐานข้อมูลปีอดีต และ ปัจจุบัน ไว้ทำแผนที่เปรียบเทียบ
+                if y == start_year:
+                    ndbi_past = built_up
+                if y == current_max_year:
+                    ndbi_present = built_up
+
+            my_bar.empty() # ซ่อนหลอดโหลดเมื่อเสร็จ
+            st.toast("⚡ สกัดข้อมูลตึกและคอนกรีตสำเร็จ! เตรียมพยากรณ์อนาคต...", icon="🤖")
+            
+            # --- 🤖 STEP 2: สมการคณิตศาสตร์ทำนายอนาคต (Linear Regression) ---
             df_history = pd.DataFrame(time_series_data)
-            
-            st.toast("⚡ สกัดข้อมูลอนุกรมเวลาอดีตสำเร็จ! กำลังคำนวณโมเดลพยากรณ์...", icon="🤖")
-            
-            # --- 🤖 STEP 2: สมการคณิตศาสตร์ทำนายอนาคต (Linear Regression Predictor) ---
             X = df_history['Year'].values
             Y = df_history['Intensity'].values
             n = len(X)
             
-            # คำนวณหาความชัน (m) และจุดตัดแกน (c) ตามสูตรกำลังสองน้อยที่สุด (Least Squares)
             m = (n * (X*Y).sum() - X.sum()*Y.sum()) / (n * (X**2).sum() - (X.sum())**2)
             c = (Y.sum() - m * X.sum()) / n
             
-            # สร้างตารางสำหรับพยากรณ์อนาคตพุ่งไปข้างหน้าตามจำนวนปีที่ผู้ใช้เลือก
             future_years = list(range(current_max_year + 1, current_max_year + predict_years + 1))
             all_years = years + future_years
             
             final_chart_data = []
             for y in all_years:
-                # เส้นประวัติศาสตร์จริง
                 hist_val = float(df_history[df_history['Year'] == y]['Intensity'].values[0]) if y <= current_max_year else None
-                # เส้นทำนายจากสมองกล AI
                 pred_val = m * y + c
                 
                 final_chart_data.append({
                     "ปี พ.ศ./ค.ศ.": str(y),
-                    "ข้อมูลจริงจากดาวเทียม (Historical)": hist_val,
-                    "เส้นแนวโน้มพยากรณ์โดย AI (Forecast)": pred_val
+                    "พื้นที่เมืองจริง (ไร่)": hist_val,
+                    "เส้นพยากรณ์การขยายตัว (ไร่)": pred_val
                 })
             
             df_trend = pd.DataFrame(final_chart_data)
             
-            # วาดเลเยอร์พื้นที่เติบโตล่าสุดลงแผนที่เพื่อความสมจริง
-            latest_img = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG').filterDate('2023-01-01', '2023-12-31').median().select('avg_rad')
-            if not is_whole_country: latest_img = latest_img.clip(roi)
-            Map.addLayer(latest_img, {'min': 0, 'max': 15, 'palette': ['black', 'purple', '#00F2FE']}, 'AI Analyzed: Economic Activity')
-            try: Map.add_legend(title="GEO AI Result", legend_dict={'พื้นที่กิจกรรมเศรษฐกิจหนาแน่น': '00F2FE'})
+            # --- STEP 3: วาดผลลัพธ์ระดับ High-Res ลงแผนที่ ---
+            # หาพื้นที่งอกใหม่: ปัจจุบันเป็นตึก(1) และอดีตไม่ใช่ตึก(0)
+            urban_growth = ndbi_present.eq(1).And(ndbi_past.eq(0))
+            
+            Map.addLayer(ndbi_present.selfMask(), {'palette': ['#00F2FE']}, 'เมืองและสิ่งปลูกสร้าง (ปัจจุบัน)')
+            Map.addLayer(urban_growth.selfMask(), {'palette': ['#FF007F']}, f'พื้นที่ขยายตัวใหม่ ({start_year}-{current_max_year})')
+            
+            try: Map.add_legend(title="การวิเคราะห์เมือง (30m)", legend_dict={'เมืองและสิ่งปลูกสร้างเดิม': '00F2FE', 'พื้นที่ขยายตัวใหม่ (New Growth)': 'FF007F'})
             except: pass
             
         except Exception as e:
             st.error(f"❌ ระบบ AI ขัดข้องชั่วคราว: {e}")
-
-# 5. แสดงผลแผนที่หลัก (ความสูง 900px ยาวสะใจเต็มจอล่าง)
-Map.to_streamlit(height=900)
+            my_bar.empty()
 
 # ---------------------------------------------------------
 # 📊 ส่วนแสดงผลกราฟเส้นพยากรณ์อนาคต (แสดงใต้แผนที่อย่างเป็นระเบียบ)
