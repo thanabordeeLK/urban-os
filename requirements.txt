@@ -5,3 +5,4 @@ earthengine-api
 setuptools==68.2.2
 streamlit-option-menu
 streamlit-folium
+pandas
