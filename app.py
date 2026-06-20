@@ -1,22 +1,37 @@
 import streamlit as st
 import geemap.foliumap as geemap
 import ee
+import os
 
-# 1. ตั้งค่าหน้าเว็บให้แสดงผลแบบเต็มจอ (Wide Layout)
+# 1. ตั้งค่าหน้าเว็บให้แสดงผลแบบเต็มจอ (ต้องเรียกใช้เป็นคำสั่งแรกสุดและครั้งเดียวเท่านั้น)
 st.set_page_config(layout="wide", page_title="Uttaradit Urban OS")
 
 st.title("🗺️ แพลตฟอร์มวิเคราะห์ข้อมูลผังเมือง (Urban OS Dashboard)")
 st.write("ระบบวิเคราะห์ข้อมูลเชิงพื้นที่และภูมิสารสนเทศเพื่อการพัฒนาเมือง")
 
-# 2. เชื่อมต่อระบบ Google Earth Engine 
-# (ระบุ ID โปรเจกต์ของคุณโดยตรง)
+# 2. เชื่อมต่อระบบ Google Earth Engine ด้วย Token จาก Secrets
 PROJECT_ID = 'project-25609b11-1067-4ef1-a1d'
 
 try:
-    ee.Initialize(project=PROJECT_ID)
+    if "EARTHENGINE_TOKEN" in st.secrets:
+        secret_token = st.secrets["EARTHENGINE_TOKEN"]
+        
+        # สร้างโฟลเดอร์และไฟล์กุญแจไว้ในระบบคลาวด์เพื่อให้ Earth Engine เรียกใช้งานได้
+        dot_ee_dir = os.path.expanduser('~/.config/earthengine')
+        os.makedirs(dot_ee_dir, exist_ok=True)
+        credentials_path = os.path.join(dot_ee_dir, 'credentials')
+        
+        with open(credentials_path, 'w') as f:
+            f.write(secret_token)
+            
+        # เริ่มต้นระบบ Earth Engine ด้วย Project ID
+        ee.Initialize(project=PROJECT_ID)
+    else:
+        st.error("ไม่พบกุญแจ EARTHENGINE_TOKEN ในระบบ Secrets ของ Streamlit")
+        st.stop()
 except Exception as e:
-    # สำหรับการรันบน Cloud ของ Streamlit อาจต้องใช้ Service Account (จะอธิบายในขั้นถัดไป)
-    st.error(f"การเชื่อมต่อ Earth Engine ขัดข้อง: {e}")
+    st.error(f"การเชื่อมต่อระบบ Earth Engine ล้มเหลว: {e}")
+    st.stop()
 
 # 3. สร้างส่วนควบคุมด้านข้าง (Sidebar) สำหรับเลือกเลเยอร์ข้อมูล
 with st.sidebar:
