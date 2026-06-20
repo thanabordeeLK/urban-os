@@ -72,7 +72,7 @@ if show_landcover:
     Map.addLayer(landcover, {}, 'Land Use (การใช้ประโยชน์ที่ดิน)', opacity=opacity)
 
 # เปิดเครื่องมือ Inspector ให้คลิกดูข้อมูลบนหน้าเว็บได้
-Map.add_inspector()
+# Map.add_inspector()
 
 # เรนเดอร์แผนที่ลงหน้าเว็บ Streamlit
 Map.to_streamlit(height=650)
