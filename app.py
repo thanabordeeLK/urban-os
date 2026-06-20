@@ -172,6 +172,20 @@ with st.sidebar:
             landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
             Map.addLayer(landcover, {}, 'Land Use', opacity=opacity)
             
+            # --- เพิ่มกล่องคำอธิบายสัญลักษณ์ (Legend) ภาษาไทย ---
+            esa_legend_dict = {
+                'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000',
+                'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
+                'ต้นไม้/ป่าไม้ (สีเขียวเข้ม)': '006400',
+                'ทุ่งหญ้า (สีเหลือง)': 'ffff4c',
+                'พุ่มไม้ (สีส้ม)': 'ffbb22',
+                'แหล่งน้ำ (สีน้ำเงิน)': '0064c8',
+                'พื้นที่ชุ่มน้ำ (สีฟ้าอมเขียว)': '0096a0',
+                'ป่าชายเลน (สีเขียวสว่าง)': '00cf75',
+                'พื้นที่ว่างเปล่า (สีเทา)': 'b4b4b4'
+            }
+            Map.add_legend(title="การใช้ประโยชน์ที่ดิน (ESA)", legend_dict=esa_legend_dict)
+            
         if show_nightlight:
             # ดึงข้อมูลแสงไฟกลางคืน
             dataset = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG').filterDate('2022-01-01', '2022-12-31').median()
