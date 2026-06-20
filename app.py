@@ -2,81 +2,31 @@ import streamlit as st
 import geemap.foliumap as geemap
 import ee
 import os
+import pandas as pd
 from streamlit_option_menu import option_menu
 from streamlit_folium import st_folium
-import pandas as pd   
 
 # 1. ตั้งค่าหน้าเว็บให้แสดงผลแบบเต็มจอ
 st.set_page_config(layout="wide", page_title="Urban OS", page_icon="🌐")
 
 # ==========================================
-# 🎨 2. ฝัง CSS ตกแต่ง UI ใหม่ (แก้ปัญหา Dropdown มองไม่เห็น)
+# 🎨 2. ฝัง CSS ตกแต่ง UI ใหม่ 
 # ==========================================
 st.markdown("""
 <style>
-    /* ปรับสีพื้นหลังหลัก */
-    .stApp {
-        background-color: #060B14;
-    }
-    /* ปรับสีพื้นหลัง Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #0B132B !important;
-        border-right: 1px solid #1E293B;
-    }
-    /* บังคับให้ข้อความทั่วไปเป็นสีขาว/เทาสว่าง (เอา div ออกเพื่อไม่ให้กระทบระบบอื่น) */
-    p, span, label {
-        color: #E2E8F0 !important;
-    }
-    /* หัวข้อเรืองแสงสี Cyan */
-    h1, h2, h3 {
-        color: #00F2FE !important;
-        text-shadow: 0px 0px 8px rgba(0, 242, 254, 0.4);
-    }
-    
-    /* -------------------------------------- */
-    /* แก้ไขสีพื้นหลัง Dropdown ให้เป็นโหมดมืด */
-    [data-baseweb="popover"] > div {
-        background-color: #0B132B !important;
-    }
-    ul[data-baseweb="menu"] {
-        background-color: #0B132B !important;
-    }
-    li[role="option"]:hover {
-        background-color: rgba(0, 242, 254, 0.2) !important;
-        color: #00F2FE !important;
-    }
-    /* -------------------------------------- */
-
-   /* ตกแต่งกรอบอัปโหลดไฟล์ให้เป็นสไตล์ AI และแก้ตัวหนังสืออ่านไม่ออก */
-    [data-testid="stFileUploadDropzone"] {
-        background-color: #0B132B !important;
-        border: 2px dashed #00F2FE !important;
-        border-radius: 10px;
-    }
-    /* บังคับให้ข้อความและไอคอนข้างในกล่องอัปโหลดเป็นสีสว่าง */
-    [data-testid="stFileUploadDropzone"] * {
-        color: #E2E8F0 !important;
-
-    }
-    /* ตกแต่งปุ่มกด */
-    .stButton>button {
-        background-color: #09203F !important;
-        border: 1px solid #00F2FE !important;
-        color: #00F2FE !important;
-        font-weight: bold;
-        border-radius: 6px;
-        width: 100%;
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        background-color: #00F2FE !important;
-        color: #060B14 !important;
-        box-shadow: 0px 0px 15px rgba(0, 242, 254, 0.6);
-    }
+    .stApp { background-color: #060B14; }
+    [data-testid="stSidebar"] { background-color: #0B132B !important; border-right: 1px solid #1E293B; }
+    p, span, label { color: #E2E8F0 !important; }
+    h1, h2, h3 { color: #00F2FE !important; text-shadow: 0px 0px 8px rgba(0, 242, 254, 0.4); }
+    [data-baseweb="popover"] > div { background-color: #0B132B !important; }
+    ul[data-baseweb="menu"] { background-color: #0B132B !important; }
+    li[role="option"]:hover { background-color: rgba(0, 242, 254, 0.2) !important; color: #00F2FE !important; }
+    [data-testid="stFileUploadDropzone"] { background-color: #0B132B !important; border: 2px dashed #00F2FE !important; border-radius: 10px; }
+    [data-testid="stFileUploadDropzone"] * { color: #E2E8F0 !important; }
+    .stButton>button { background-color: #09203F !important; border: 1px solid #00F2FE !important; color: #00F2FE !important; font-weight: bold; border-radius: 6px; width: 100%; transition: all 0.3s ease; }
+    .stButton>button:hover { background-color: #00F2FE !important; color: #060B14 !important; box-shadow: 0px 0px 15px rgba(0, 242, 254, 0.6); }
 </style>
 """, unsafe_allow_html=True)
-
-# ==========================================
 
 st.title("🌐 Urban OS : Spatial AI Dashboard")
 st.markdown("*ระบบปฏิบัติการผังเมืองอัจฉริยะ และการจำลองสถานการณ์เชิงพื้นที่*")
@@ -99,26 +49,20 @@ except Exception as e:
     st.error(f"การเชื่อมต่อระบบล้มเหลว: {e}")
     st.stop()
 
-# สร้างแผนที่หลัก (ปรับพิกัดศูนย์กลางมาที่ประเทศไทย และ Zoom out ออกมา)
 # ---------------------------------------------------------
 # ระบบดึงพิกัดและความจำแผนที่ (Session State)
 # ---------------------------------------------------------
-map_center = [15.87, 100.99] # ค่าเริ่มต้น (ประเทศไทย)
+map_center = [15.87, 100.99]
 map_zoom = 6
-
-# ถ้าระบบเคยจำพิกัดไว้แล้ว ให้ดึงพิกัดล่าสุดมาใช้
 if "urban_map" in st.session_state and st.session_state["urban_map"].get("center"):
     map_center = [st.session_state["urban_map"]["center"]["lat"], st.session_state["urban_map"]["center"]["lng"]]
     map_zoom = st.session_state["urban_map"]["zoom"]
 
-# สร้างแผนที่หลักจากพิกัดล่าสุด
 Map = geemap.Map(center=map_center, zoom=map_zoom, ee_initialize=False)
 
-# 4. จัดการแถบเมนูด้านข้าง (Sidebar) แบบล้ำสมัย (แก้สีเมนูแล้ว)
+# 4. จัดการแถบเมนูด้านข้าง (Sidebar)
 with st.sidebar:
     st.markdown("<h3 style='text-align: center; margin-bottom: 20px;'>⚙️ CONTROL PANEL</h3>", unsafe_allow_html=True)
-    
-    # สร้างเมนูที่มีไอคอน (แก้สีไม่ให้กลืนกับพื้นหลัง)
     selected_mode = option_menu(
         menu_title=None, 
         options=["General Plan", "AI Simulation"],
@@ -134,7 +78,7 @@ with st.sidebar:
     )
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-   # ==========================================
+    # ==========================================
     # โหมดที่ 1: งานแผนทั่วไป
     # ==========================================
     if selected_mode == "General Plan":
@@ -142,7 +86,6 @@ with st.sidebar:
         basemap_choice = st.selectbox("🗺️ Basemap", ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN"])
         Map.add_basemap(basemap_choice)
 
-        # ฟังก์ชันดึงข้อมูลจังหวัดและอำเภอจาก GEE (Cache ไว้เพื่อให้แอปโหลดเร็ว)
         @st.cache_data
         def get_provinces():
             fc = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
@@ -153,9 +96,7 @@ with st.sidebar:
             fc = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.eq('ADM1_NAME', province_name))
             return sorted(fc.aggregate_array('ADM2_NAME').getInfo())
 
-        # ---------------------------------------------------------
-        # 📍 ระบบค้นหาและโฟกัสพื้นที่ (Location Filter)
-        # ---------------------------------------------------------
+        # 📍 ระบบค้นหาและโฟกัสพื้นที่
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
 
@@ -168,7 +109,7 @@ with st.sidebar:
         dist_options = ["-- วิเคราะห์ทั้งจังหวัด --"] + districts
         selected_district = st.selectbox("เลือกอำเภอ (District)", dist_options, index=default_dist_idx + 1 if "Tha Pla" in districts else 0)
 
-       # สร้างขอบเขตพื้นที่ (ROI - Region of Interest)
+        # สร้างขอบเขตพื้นที่ (ROI)
         if selected_district != "-- วิเคราะห์ทั้งจังหวัด --":
             roi = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.And(
                 ee.Filter.eq('ADM1_NAME', selected_province),
@@ -177,35 +118,29 @@ with st.sidebar:
         else:
             roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
 
-        # 1. Boundary Highlighting: วาดเส้นขอบเขตเรืองแสงสีฟ้านีออน
+        # วาดเส้นขอบเขต
         Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary: {selected_district}')
 
-        # 2. Auto-Pan/Zoom: ซูมไปที่พื้นที่เป้าหมาย (แก้ไขให้ซูมเฉพาะตอนเปลี่ยนพื้นที่เท่านั้น)
-        # ตรวจสอบว่าระบบเคยจำค่าพื้นที่ไว้หรือยัง
+        # ล็อกพิกัด
         if "last_location" not in st.session_state:
             st.session_state["last_location"] = (selected_province, selected_district)
-            Map.centerObject(roi) # ซูมครั้งแรกเมื่อเปิดแอป
+            Map.centerObject(roi)
         else:
-            # ถ้าพื้นที่เป้าหมาย "เปลี่ยนไปจากเดิม" ค่อยสั่งซูมใหม่
             if st.session_state["last_location"] != (selected_province, selected_district):
                 st.session_state["last_location"] = (selected_province, selected_district)
                 Map.centerObject(roi)
 
-        # ---------------------------------------------------------
         # 🌍 ชั้นข้อมูล และ Data Masking
-        # ---------------------------------------------------------
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("**🌍 ข้อมูลกายภาพ (Physical)**")
         show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=True)
         opacity = st.slider("Opacity (ความโปร่งแสง)", 0.0, 1.0, 0.7)
 
-       if show_landcover:
+        if show_landcover:
             landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
-            # 3. Data Masking: ตัดขอบภาพให้แสดงเฉพาะในพื้นที่เป้าหมาย
             landcover_clipped = landcover.clip(roi) 
             Map.addLayer(landcover_clipped, {}, 'Land Use (Clipped)', opacity=opacity)
 
-            # --- แก้ไขกล่องคำอธิบาย (Legend) ให้แสดงครบทุกสี ---
             esa_legend_dict = {
                 'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000',
                 'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
@@ -219,19 +154,16 @@ with st.sidebar:
             }
             Map.add_legend(title="การใช้ที่ดิน", legend_dict=esa_legend_dict)
 
-        # ---------------------------------------------------------
-        # 📊 4. ดึงตัวเลขสถิติพื้นที่ (Area Statistics)
-        # ---------------------------------------------------------
+        # 📊 Area Statistics
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("### 📊 Area Statistics")
 
         if show_landcover and st.button("📈 เริ่มการคำนวณสถิติพื้นที่"):
             with st.spinner("AI กำลังสแกนพื้นที่และประมวลผลข้อมูล..."):
-                # สั่งให้ AI คำนวณจำนวนพิกเซลในเขตที่เลือก
                 stats = landcover_clipped.reduceRegion(
                     reducer=ee.Reducer.frequencyHistogram(),
                     geometry=roi.geometry(),
-                    scale=100, # คำนวณที่ความละเอียด 100 เมตรเพื่อความรวดเร็ว
+                    scale=100,
                     maxPixels=1e9
                 ).getInfo()
 
@@ -243,16 +175,13 @@ with st.sidebar:
                         '60': 'พื้นที่ว่างเปล่า', '80': 'แหล่งน้ำ', '90': 'พื้นที่ชุ่มน้ำ', '95': 'ป่าชายเลน'
                     }
 
-                    # แปลงข้อมูลเป็นตารางและกราฟ
                     df_data = []
                     for key, val in raw_data.items():
                         name = esa_names.get(key, f"ประเภท {key}")
-                        # พิกเซล 100x100 ม. = 10,000 ตร.ม. (ประมาณ 6.25 ไร่)
                         area_rai = val * 6.25
                         df_data.append({"ประเภทพื้นที่": name, "ขนาด (ไร่)": area_rai})
 
                     df = pd.DataFrame(df_data).sort_values(by="ขนาด (ไร่)", ascending=False)
-                    
                     st.success("ประมวลผลเสร็จสิ้น!")
                     st.dataframe(df.style.format({"ขนาด (ไร่)": "{:,.2f}"}), hide_index=True, use_container_width=True)
                     st.bar_chart(df.set_index("ประเภทพื้นที่"))
@@ -273,18 +202,17 @@ with st.sidebar:
         predict_years = st.slider("Forecast Timeline (Years)", 1, 30, 5)
         
         st.markdown("### 🛡️ 4. Engineering Mitigation")
-        # เอาชื่อพื้นที่เฉพาะออก เพื่อให้รองรับการวิเคราะห์ทุกพื้นที่
         sim_tool = st.radio("Simulation Tools", ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"])
         
-        st.write("") # เว้นบรรทัด
+        st.write("") 
         if st.button("▶️ RUN AI ENGINE"):
             st.success("Compute Engine Active: กำลังเตรียมทรัพยากรประมวลผล...")
 
 # 5. แสดงผลแผนที่หลัก และเปิดระบบดักจับพิกัด
 st_folium(
     Map, 
-    key="urban_map", # ชื่อหน่วยความจำที่ตั้งไว้เชื่อมโยงกับโค้ดด้านบน
+    key="urban_map", 
     height=700, 
     use_container_width=True,
-    returned_objects=["center", "zoom"] # ให้ระบบส่งค่าแค่พิกัดและระยะซูมกลับมาเพื่อลดความหน่วง
+    returned_objects=["center", "zoom"]
 )
