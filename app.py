@@ -3,7 +3,8 @@ import geemap.foliumap as geemap
 import ee
 import os
 from streamlit_option_menu import option_menu
-from streamlit_folium import st_folium 
+from streamlit_folium import st_folium
+import pandas as pd   
 
 # 1. ตั้งค่าหน้าเว็บให้แสดงผลแบบเต็มจอ
 st.set_page_config(layout="wide", page_title="Urban OS", page_icon="🌐")
@@ -133,75 +134,115 @@ with st.sidebar:
     )
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-    # ==========================================
+   # ==========================================
     # โหมดที่ 1: งานแผนทั่วไป
     # ==========================================
     if selected_mode == "General Plan":
         st.markdown("### 🥞 Data Layers")
-        basemap_choice = st.selectbox("🗺️ Basemap", ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"])
+        basemap_choice = st.selectbox("🗺️ Basemap", ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN"])
         Map.add_basemap(basemap_choice)
-        
-        # จัดกลุ่มเมนูให้ดูเป็นระเบียบ
+
+        # ฟังก์ชันดึงข้อมูลจังหวัดและอำเภอจาก GEE (Cache ไว้เพื่อให้แอปโหลดเร็ว)
+        @st.cache_data
+        def get_provinces():
+            fc = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
+            return sorted(fc.aggregate_array('ADM1_NAME').getInfo())
+
+        @st.cache_data
+        def get_districts(province_name):
+            fc = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.eq('ADM1_NAME', province_name))
+            return sorted(fc.aggregate_array('ADM2_NAME').getInfo())
+
+        # ---------------------------------------------------------
+        # 📍 ระบบค้นหาและโฟกัสพื้นที่ (Location Filter)
+        # ---------------------------------------------------------
+        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
+        st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
+
+        provinces = get_provinces()
+        default_prov_idx = provinces.index("Uttaradit") if "Uttaradit" in provinces else 0
+        selected_province = st.selectbox("เลือกจังหวัด (Province)", provinces, index=default_prov_idx)
+
+        districts = get_districts(selected_province)
+        default_dist_idx = districts.index("Tha Pla") if "Tha Pla" in districts else 0
+        dist_options = ["-- วิเคราะห์ทั้งจังหวัด --"] + districts
+        selected_district = st.selectbox("เลือกอำเภอ (District)", dist_options, index=default_dist_idx + 1 if "Tha Pla" in districts else 0)
+
+        # สร้างขอบเขตพื้นที่ (ROI - Region of Interest)
+        if selected_district != "-- วิเคราะห์ทั้งจังหวัด --":
+            roi = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.And(
+                ee.Filter.eq('ADM1_NAME', selected_province),
+                ee.Filter.eq('ADM2_NAME', selected_district)
+            ))
+        else:
+            roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
+
+        # 1. Boundary Highlighting: วาดเส้นขอบเขตเรืองแสงสีฟ้านีออน
+        Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary: {selected_district}')
+
+        # 2. Auto-Pan/Zoom: ซูมไปที่พื้นที่เป้าหมายอัตโนมัติ
+        Map.centerObject(roi)
+
+        # ---------------------------------------------------------
+        # 🌍 ชั้นข้อมูล และ Data Masking
+        # ---------------------------------------------------------
+        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("**🌍 ข้อมูลกายภาพ (Physical)**")
-        show_dem = st.checkbox("⛰️ Terrain Model (ความสูงภูมิประเทศ)", value=True)
-        show_water = st.checkbox("💧 Surface Water (แหล่งน้ำผิวดิน)", value=False)
-        show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=False)
-        
-        st.markdown("**🏙️ ข้อมูลเศรษฐกิจและสังคม (Socio-Economic)**")
-        show_nightlight = st.checkbox("💡 Nighttime Lights (แสงไฟกลางคืน)", value=False)
-        show_pop = st.checkbox("👥 Population Density (ความหนาแน่นประชากร)", value=False)
-        
+        show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=True)
         opacity = st.slider("Opacity (ความโปร่งแสง)", 0.0, 1.0, 0.7)
-        
-        # ---------------------------------------------------------
-        # ส่วนดึงข้อมูลจาก Google Earth Engine มาแสดงบนแผนที่
-        # ---------------------------------------------------------
-        if show_dem:
-            dem = ee.Image('USGS/SRTMGL1_003')
-            dem_vis = {'min': 0, 'max': 1000, 'palette': ['006633', 'E5FFCC', '662A00', 'D8D8D8', 'F5F5F5']}
-            Map.addLayer(dem, dem_vis, 'Elevation (DEM)', opacity=opacity)
-            
-        if show_water:
-            # ดึงข้อมูลแหล่งน้ำผิวดินย้อนหลัง
-            water = ee.Image("JRC/GSW1_4/GlobalSurfaceWater").select('occurrence')
-            water_vis = {'min': 0, 'max': 100, 'palette': ['lightblue', 'blue', 'darkblue']}
-            # updateMask เพื่อให้แสดงเฉพาะจุดที่มีน้ำ (ทะลุเห็นพื้นหลัง)
-            Map.addLayer(water.updateMask(water.gt(0)), water_vis, 'Surface Water', opacity=opacity)
-            
+
         if show_landcover:
             landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
-            Map.addLayer(landcover, {}, 'Land Use', opacity=opacity)
-            
-            # --- เพิ่มกล่องคำอธิบายสัญลักษณ์ (Legend) ภาษาไทย ---
+            # 3. Data Masking: ตัดขอบภาพให้แสดงเฉพาะในพื้นที่เป้าหมาย
+            landcover_clipped = landcover.clip(roi) 
+            Map.addLayer(landcover_clipped, {}, 'Land Use (Clipped)', opacity=opacity)
+
             esa_legend_dict = {
                 'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000',
                 'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
                 'ต้นไม้/ป่าไม้ (สีเขียวเข้ม)': '006400',
-                'ทุ่งหญ้า (สีเหลือง)': 'ffff4c',
-                'พุ่มไม้ (สีส้ม)': 'ffbb22',
                 'แหล่งน้ำ (สีน้ำเงิน)': '0064c8',
-                'พื้นที่ชุ่มน้ำ (สีฟ้าอมเขียว)': '0096a0',
-                'ป่าชายเลน (สีเขียวสว่าง)': '00cf75',
-                'พื้นที่ว่างเปล่า (สีเทา)': 'b4b4b4'
+                'พื้นที่อื่นๆ': 'b4b4b4'
             }
-            Map.add_legend(title="การใช้ประโยชน์ที่ดิน (ESA)", legend_dict=esa_legend_dict)
-            
-        if show_nightlight:
-            # ดึงข้อมูลแสงไฟกลางคืน
-            dataset = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG').filterDate('2022-01-01', '2022-12-31').median()
-            night_lights = dataset.select('avg_rad')
-            nl_vis = {'min': 0, 'max': 60, 'palette': ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red', 'white']}
-            Map.addLayer(night_lights, nl_vis, 'Nighttime Lights', opacity=opacity)
-            
-        if show_pop:
-            # ดึงข้อมูลประชากรโลก กรองเฉพาะประเทศไทย
-            pop = ee.ImageCollection("WorldPop/GP/100m/pop").filter(ee.Filter.eq('country', 'THA')).median()
-            pop_vis = {'min': 0, 'max': 50, 'palette': ['24126c', '1fff4f', 'd4ff50']}
-            Map.addLayer(pop, pop_vis, 'Population Density', opacity=opacity)
-            
+            Map.add_legend(title="การใช้ที่ดิน", legend_dict=esa_legend_dict)
+
+        # ---------------------------------------------------------
+        # 📊 4. ดึงตัวเลขสถิติพื้นที่ (Area Statistics)
+        # ---------------------------------------------------------
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("### 📊 Area Statistics")
-        st.info("📌 ระบบจะดึงข้อมูลสถิติพื้นที่เมื่อเลือก Polygon")
+
+        if show_landcover and st.button("📈 เริ่มการคำนวณสถิติพื้นที่"):
+            with st.spinner("AI กำลังสแกนพื้นที่และประมวลผลข้อมูล..."):
+                # สั่งให้ AI คำนวณจำนวนพิกเซลในเขตที่เลือก
+                stats = landcover_clipped.reduceRegion(
+                    reducer=ee.Reducer.frequencyHistogram(),
+                    geometry=roi.geometry(),
+                    scale=100, # คำนวณที่ความละเอียด 100 เมตรเพื่อความรวดเร็ว
+                    maxPixels=1e9
+                ).getInfo()
+
+                if 'Map' in stats:
+                    raw_data = stats['Map']
+                    esa_names = {
+                        '10': 'ต้นไม้/ป่าไม้', '20': 'พุ่มไม้', '30': 'ทุ่งหญ้า',
+                        '40': 'เกษตรกรรม', '50': 'สิ่งปลูกสร้าง/เมือง',
+                        '60': 'พื้นที่ว่างเปล่า', '80': 'แหล่งน้ำ', '90': 'พื้นที่ชุ่มน้ำ', '95': 'ป่าชายเลน'
+                    }
+
+                    # แปลงข้อมูลเป็นตารางและกราฟ
+                    df_data = []
+                    for key, val in raw_data.items():
+                        name = esa_names.get(key, f"ประเภท {key}")
+                        # พิกเซล 100x100 ม. = 10,000 ตร.ม. (ประมาณ 6.25 ไร่)
+                        area_rai = val * 6.25
+                        df_data.append({"ประเภทพื้นที่": name, "ขนาด (ไร่)": area_rai})
+
+                    df = pd.DataFrame(df_data).sort_values(by="ขนาด (ไร่)", ascending=False)
+                    
+                    st.success("ประมวลผลเสร็จสิ้น!")
+                    st.dataframe(df.style.format({"ขนาด (ไร่)": "{:,.2f}"}), hide_index=True, use_container_width=True)
+                    st.bar_chart(df.set_index("ประเภทพื้นที่"))
 
     # ==========================================
     # โหมดที่ 2: วิเคราะห์ขั้นสูง (AI Simulation)
