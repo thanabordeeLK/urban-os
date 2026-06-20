@@ -168,7 +168,7 @@ with st.sidebar:
         dist_options = ["-- วิเคราะห์ทั้งจังหวัด --"] + districts
         selected_district = st.selectbox("เลือกอำเภอ (District)", dist_options, index=default_dist_idx + 1 if "Tha Pla" in districts else 0)
 
-        # สร้างขอบเขตพื้นที่ (ROI - Region of Interest)
+       # สร้างขอบเขตพื้นที่ (ROI - Region of Interest)
         if selected_district != "-- วิเคราะห์ทั้งจังหวัด --":
             roi = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.And(
                 ee.Filter.eq('ADM1_NAME', selected_province),
@@ -180,8 +180,16 @@ with st.sidebar:
         # 1. Boundary Highlighting: วาดเส้นขอบเขตเรืองแสงสีฟ้านีออน
         Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary: {selected_district}')
 
-        # 2. Auto-Pan/Zoom: ซูมไปที่พื้นที่เป้าหมายอัตโนมัติ
-        Map.centerObject(roi)
+        # 2. Auto-Pan/Zoom: ซูมไปที่พื้นที่เป้าหมาย (แก้ไขให้ซูมเฉพาะตอนเปลี่ยนพื้นที่เท่านั้น)
+        # ตรวจสอบว่าระบบเคยจำค่าพื้นที่ไว้หรือยัง
+        if "last_location" not in st.session_state:
+            st.session_state["last_location"] = (selected_province, selected_district)
+            Map.centerObject(roi) # ซูมครั้งแรกเมื่อเปิดแอป
+        else:
+            # ถ้าพื้นที่เป้าหมาย "เปลี่ยนไปจากเดิม" ค่อยสั่งซูมใหม่
+            if st.session_state["last_location"] != (selected_province, selected_district):
+                st.session_state["last_location"] = (selected_province, selected_district)
+                Map.centerObject(roi)
 
         # ---------------------------------------------------------
         # 🌍 ชั้นข้อมูล และ Data Masking
