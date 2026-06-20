@@ -8,7 +8,7 @@ from streamlit_option_menu import option_menu
 st.set_page_config(layout="wide", page_title="Urban OS", page_icon="🌐")
 
 # ==========================================
-# 🎨 2. ฝัง CSS ตกแต่ง UI ใหม่ (แก้ปัญหาอ่านยาก)
+# 🎨 2. ฝัง CSS ตกแต่ง UI ใหม่ (แก้ปัญหา Dropdown มองไม่เห็น)
 # ==========================================
 st.markdown("""
 <style>
@@ -21,8 +21,8 @@ st.markdown("""
         background-color: #0B132B !important;
         border-right: 1px solid #1E293B;
     }
-    /* บังคับให้ข้อความทั่วไปเป็นสีขาว/เทาสว่าง เพื่อให้อ่านง่าย */
-    p, span, label, div {
+    /* บังคับให้ข้อความทั่วไปเป็นสีขาว/เทาสว่าง (เอา div ออกเพื่อไม่ให้กระทบระบบอื่น) */
+    p, span, label {
         color: #E2E8F0 !important;
     }
     /* หัวข้อเรืองแสงสี Cyan */
@@ -30,6 +30,21 @@ st.markdown("""
         color: #00F2FE !important;
         text-shadow: 0px 0px 8px rgba(0, 242, 254, 0.4);
     }
+    
+    /* -------------------------------------- */
+    /* แก้ไขสีพื้นหลัง Dropdown ให้เป็นโหมดมืด */
+    [data-baseweb="popover"] > div {
+        background-color: #0B132B !important;
+    }
+    ul[data-baseweb="menu"] {
+        background-color: #0B132B !important;
+    }
+    li[role="option"]:hover {
+        background-color: rgba(0, 242, 254, 0.2) !important;
+        color: #00F2FE !important;
+    }
+    /* -------------------------------------- */
+
     /* ตกแต่งกรอบอัปโหลดไฟล์ให้เป็นสไตล์ AI */
     [data-testid="stFileUploadDropzone"] {
         background-color: #111A30 !important;
