@@ -50,13 +50,18 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------
-# ระบบดึงพิกัดและความจำแผนที่ (Session State)
+# ระบบดึงพิกัดและความจำแผนที่ (Session State) แบบปลอดภัย 100%
 # ---------------------------------------------------------
 map_center = [15.87, 100.99]
 map_zoom = 6
-if "urban_map" in st.session_state and st.session_state["urban_map"].get("center"):
-    map_center = [st.session_state["urban_map"]["center"]["lat"], st.session_state["urban_map"]["center"]["lng"]]
-    map_zoom = st.session_state["urban_map"]["zoom"]
+
+# แก้ไขบั๊กหน้าจอดำ: ดักจับกรณีที่หน่วยความจำ (Session) ยังว่างเปล่า
+if "urban_map" in st.session_state and st.session_state["urban_map"] is not None:
+    state = st.session_state["urban_map"]
+    if "center" in state and state["center"] is not None:
+        map_center = [state["center"]["lat"], state["center"]["lng"]]
+    if "zoom" in state and state["zoom"] is not None:
+        map_zoom = state["zoom"]
 
 Map = geemap.Map(center=map_center, zoom=map_zoom, ee_initialize=False)
 
@@ -79,7 +84,7 @@ with st.sidebar:
     )
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-    # 📍 ระบบค้นหาและกำหนดพื้นที่ระดับสากล (ใช้ร่วมกันทั้ง 2 โหมด)
+    # 📍 ระบบค้นหาและกำหนดพื้นที่ระดับสากล
     st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
 
     @st.cache_data
@@ -110,10 +115,8 @@ with st.sidebar:
     else:
         roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
 
-    # วาดเส้นขอบเขตพื้นที่เป้าหมาย
     Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary')
 
-    # ระบบล็อกความจำพิกัดแผนที่ ไม่ให้เด้งหลุดตอนซูม
     if "last_location" not in st.session_state:
         st.session_state["last_location"] = (selected_province, selected_district)
         Map.centerObject(roi)
@@ -187,10 +190,8 @@ with st.sidebar:
         st.markdown("### 🔍 2. Spatial Analysis")
         analysis_type = st.selectbox("Model Type", ["Urban Growth Tracking", "Flood Risk Simulation", "Land Suitability"])
         
-        # แสดงเมนูย่อยเฉพาะเมื่อเลือกโหมดติดตามการโตของเมือง
         if analysis_type == "Urban Growth Tracking":
             st.info("💡 โมเดล AI จะวิเคราะห์การขยายตัวของเมืองจากความเข้มของแสงไฟและกิจกรรมทางเศรษฐกิจในอดีตเทียบกับปัจจุบัน (ปี 2023)")
-            # เปลี่ยนเป็น slider ปกติ เพื่อให้เลือกปีเปรียบเทียบได้อิสระ
             start_year = st.slider("เลือกปีเริ่มต้น (อดีต) เพื่อเปรียบเทียบ", min_value=2014, max_value=2022, value=2015)
         
         st.markdown("### 📈 3. Predictive Modeling")
@@ -200,44 +201,30 @@ with st.sidebar:
         sim_tool = st.radio("Simulation Tools", ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"])
         
         st.write("") 
-        
-        # ปุ่มเริ่มกระบวนการคำนวณของ AI
         run_ai = st.button("▶️ RUN AI ENGINE")
 
-# 5. ประมวลผลแผนที่หลักและเปิดระบบดักจับพิกัด
-# หากมีการกดรัน AI Engine ในส่วนวิเคราะห์การเติบโตของเมือง
-if selected_mode == "AI Simulation" and analysis_type == "Urban Growth Tracking" and run_ai:
-    with st.spinner(f"🧠 GEO AI Engine กำลังประมวลผลการคำนวณความแตกต่างเชิงพื้นที่ระหว่างปี {start_year} กับ 2023..."):
-        # 1. ดึงข้อมูลแสงไฟปีอดีต (ตามที่ผู้ใช้เลื่อนสไลเดอร์เลือก)
-        viirs_past = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
-            .filterDate(f'{start_year}-01-01', f'{start_year}-12-31').median().select('avg_rad').clip(roi)
-            
-        # 2. ดึงข้อมูลแสงไฟปี 2023 (ปัจจุบัน)
-        viirs_present = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
-            .filterDate('2023-01-01', '2023-12-31').median().select('avg_rad').clip(roi)
-        
-        # 3. ใช้ตรรกะ AI คัดกรองจุดที่โตขึ้น (ตั้งเกณฑ์ค่าความสว่างแสงไฟ > 3)
-        urban_past = viirs_past.gt(3)
-        urban_present = viirs_present.gt(3)
-        
-        # จุดที่ปัจจุบันมีแสงไฟ แต่ในอดีตไม่มี = พื้นที่เมืองขยายตัวใหม่ (New Growth)
-        urban_growth = urban_present.And(urban_past.Not())
-        
-        # 4. แสดงผลชั้นข้อมูลลงบนแผนที่ด้วยสีชมพูนีออนสว่างวาบ
-        Map.addLayer(viirs_present, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Base: Nighttime Lights 2023', False)
-        Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, f'📈 New Urban Growth ({start_year}-2023)')
-        
-        # ทำกล่องคำอธิบายสีสำหรับการเติบโตของเมือง
-        growth_legend = {f'พื้นที่ขยายตัวใหม่ ({start_year}-2023)': 'FF007F'}
-        Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict=growth_legend)
-        
-        st.toast("🧠 AI จำลองโมเดลเสร็จสิ้น! แสดงแถบสีชมพูในจุดที่เมืองขยายตัว", icon="✨")
+        # นำบล็อกการประมวลผล AI เข้ามาไว้ในโหมดที่ 2 โดยตรงเพื่อไม่ให้ตีกับโหมด General Plan
+        if analysis_type == "Urban Growth Tracking" and run_ai:
+            with st.spinner(f"🧠 GEO AI Engine กำลังประมวลผลการคำนวณความแตกต่างเชิงพื้นที่ระหว่างปี {start_year} กับ 2023..."):
+                viirs_past = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+                    .filterDate(f'{start_year}-01-01', f'{start_year}-12-31').median().select('avg_rad').clip(roi)
+                    
+                viirs_present = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+                    .filterDate('2023-01-01', '2023-12-31').median().select('avg_rad').clip(roi)
+                
+                urban_past = viirs_past.gt(3)
+                urban_present = viirs_present.gt(3)
+                
+                urban_growth = urban_present.And(urban_past.Not())
+                
+                Map.addLayer(viirs_present, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Base: Nighttime Lights 2023', False)
+                Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, f'📈 New Urban Growth ({start_year}-2023)')
+                
+                growth_legend = {f'พื้นที่ขยายตัวใหม่ ({start_year}-2023)': 'FF007F'}
+                Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict=growth_legend)
+                
+                st.toast("🧠 AI จำลองโมเดลเสร็จสิ้น! แสดงแถบสีชมพูในจุดที่เมืองขยายตัว", icon="✨")
 
-# เรนเดอร์แผนที่ลงหน้าจอ
-st_folium(
-    Map, 
-    key="urban_map", 
-    height=700, 
-    use_container_width=True,
-    returned_objects=["center", "zoom"]
-)
+# 5. ประมวลผลแผนที่หลัก
+# ใช้ Map.to_streamlit แทน st_folium(Map) เพื่อความเสถียรของไลบรารี
+Map.to_streamlit(height=700, key="urban_map", returned_objects=["center", "zoom"])
