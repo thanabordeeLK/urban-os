@@ -199,18 +199,23 @@ with st.sidebar:
         show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=True)
         opacity = st.slider("Opacity (ความโปร่งแสง)", 0.0, 1.0, 0.7)
 
-        if show_landcover:
+       if show_landcover:
             landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
             # 3. Data Masking: ตัดขอบภาพให้แสดงเฉพาะในพื้นที่เป้าหมาย
             landcover_clipped = landcover.clip(roi) 
             Map.addLayer(landcover_clipped, {}, 'Land Use (Clipped)', opacity=opacity)
 
+            # --- แก้ไขกล่องคำอธิบาย (Legend) ให้แสดงครบทุกสี ---
             esa_legend_dict = {
                 'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000',
                 'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
                 'ต้นไม้/ป่าไม้ (สีเขียวเข้ม)': '006400',
+                'ทุ่งหญ้า (สีเหลือง)': 'ffff4c',
+                'พุ่มไม้ (สีส้ม)': 'ffbb22',
                 'แหล่งน้ำ (สีน้ำเงิน)': '0064c8',
-                'พื้นที่อื่นๆ': 'b4b4b4'
+                'พื้นที่ชุ่มน้ำ (สีฟ้าอมเขียว)': '0096a0',
+                'ป่าชายเลน (สีเขียวสว่าง)': '00cf75',
+                'พื้นที่ว่างเปล่า (สีเทา)': 'b4b4b4'
             }
             Map.add_legend(title="การใช้ที่ดิน", legend_dict=esa_legend_dict)
 
