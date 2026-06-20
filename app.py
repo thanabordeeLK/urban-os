@@ -127,23 +127,93 @@ with st.sidebar:
 
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-    # ==========================================
+# ==========================================
     # โหมดที่ 1: งานแผนทั่วไป
     # ==========================================
     if selected_mode == "General Plan":
-        st.markdown("### 🥞 Data Layers")
-        basemap_choice = st.selectbox("🗺️ Basemap", ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN"])
+        st.markdown("### 🥞 Data Layers (ชั้นข้อมูล)")
+        basemap_choice = st.selectbox("🗺️ Basemap (มีข้อมูลถนนและซอยใน OSM)", ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"])
         Map.add_basemap(basemap_choice)
 
-        st.markdown("**🌍 ข้อมูลกายภาพ (Physical)**")
-        show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=True)
-        opacity = st.slider("Opacity (ความโปร่งแสง)", 0.0, 1.0, 0.7)
+        st.markdown("**🌍 ข้อมูลภูมิประเทศ & แหล่งน้ำ (Physical & Water)**")
+        
+        show_cop_dem = st.checkbox("⛰️ Copernicus DEM (ความสูง 30m)", value=False)
+        if show_cop_dem: op_cop_dem = st.slider("ความโปร่งแสง DEM", 0.0, 1.0, 0.7, key="op1")
+
+        show_eng_dem = st.checkbox("⛰️ England 1m DTM (เฉพาะ UK)", value=False)
+        if show_eng_dem: op_eng_dem = st.slider("ความโปร่งแสง England DTM", 0.0, 1.0, 0.7, key="op2")
+
+        show_dswx_s1 = st.checkbox("💧 DSWx-S1 (แหล่งน้ำ Radar)", value=False)
+        if show_dswx_s1: op_dswx_s1 = st.slider("ความโปร่งแสง DSWx-S1", 0.0, 1.0, 0.7, key="op3")
+
+        show_dswx_hls = st.checkbox("💧 DSWx-HLS (แหล่งน้ำ Optical)", value=False)
+        if show_dswx_hls: op_dswx_hls = st.slider("ความโปร่งแสง DSWx-HLS", 0.0, 1.0, 0.7, key="op4")
+
+        show_gfd = st.checkbox("🌊 Global Flood Database (ประวัติน้ำท่วมขัง)", value=False)
+        if show_gfd: op_gfd = st.slider("ความโปร่งแสง Flood Database", 0.0, 1.0, 0.7, key="op5")
+
+        st.markdown("**🌱 ข้อมูลการใช้ที่ดิน & อากาศ (Land Cover & Climate)**")
+        
+        show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=False)
+        if show_landcover: op_landcover = st.slider("ความโปร่งแสง ESA", 0.0, 1.0, 0.7, key="op6")
+
+        show_dw = st.checkbox("🌿 Dynamic World V1 (การใช้ที่ดิน Real-time)", value=False)
+        if show_dw: op_dw = st.slider("ความโปร่งแสง Dynamic World", 0.0, 1.0, 0.7, key="op7")
+
+        show_chirts = st.checkbox("🌡️ CHIRTS Max Temperature (อุณหภูมิ 2016)", value=False)
+        if show_chirts: op_chirts = st.slider("ความโปร่งแสง อุณหภูมิ", 0.0, 1.0, 0.7, key="op8")
+
+        st.markdown("**🏙️ ข้อมูลการขยายตัวเมือง & ประชากร (Urbanization)**")
+        
+        show_urban = st.checkbox("🏢 GHSL: Degree of Urbanization (ระดับความเป็นเมือง)", value=False)
+        if show_urban: op_urban = st.slider("ความโปร่งแสง ความเป็นเมือง", 0.0, 1.0, 0.7, key="op9")
+
+        show_pop = st.checkbox("👥 GHSL: Global Population (ความหนาแน่นประชากร)", value=False)
+        if show_pop: op_pop = st.slider("ความโปร่งแสง ประชากร", 0.0, 1.0, 0.7, key="op10")
+
+        # ---------------------------------------------------------
+        # ส่วนเรียกใช้ข้อมูลและดึงค่าความโปร่งแสงแบบแยกอิสระ
+        # ---------------------------------------------------------
+
+        if show_cop_dem:
+            dem = ee.ImageCollection("COPERNICUS/DEM/GLO30").select('DEM').mosaic().clip(roi)
+            dem_vis = {'min': 0, 'max': 1000, 'palette': ['006633', 'E5FFCC', '662A00', 'D8D8D8', 'F5F5F5']}
+            Map.addLayer(dem, dem_vis, 'Copernicus DEM 30m', opacity=op_cop_dem)
+
+        if show_eng_dem:
+            eng_img = ee.Image('UK/EA/ENGLAND_1M_TERRAIN/2022').select('dtm')
+            eng_vis = {'palette': ['0000ff', '00ffff', 'ffff00', 'ff0000', 'ffffff'], 'max': 630, 'min': -5}
+            Map.addLayer(eng_img, eng_vis, 'England 1m DTM', opacity=op_eng_dem)
+
+        if show_dswx_s1:
+            dswx_s1_col = ee.ImageCollection('OPERA/DSWX/L3_V1/S1').filterBounds(roi).filterDate('2023-01-01', '2024-01-01')
+            def mask_s1(image):
+                wtr = image.select('WTR_Water_classification')
+                return wtr.updateMask(wtr.lt(252))
+            dswx_s1 = dswx_s1_col.map(mask_s1).reduce(ee.Reducer.max()).rename('WTR_Water_classification').clip(roi)
+            wtr_palette = ['ffffff', '0000ff', '0088ff', 'f2f2f2', 'dfdfdf', 'da00ff']
+            wtr_remapped = dswx_s1.remap([0, 1, 2, 252, 253, 254], [0, 1, 2, 3, 4, 5])
+            Map.addLayer(wtr_remapped, {'min': 0, 'max': 5, 'palette': wtr_palette}, 'DSWx-S1 Water Extent', opacity=op_dswx_s1)
+
+        if show_dswx_hls:
+            dswx_hls_col = ee.ImageCollection('OPERA/DSWX/L3_V1/HLS').filterBounds(roi).filterDate('2023-01-01', '2024-01-01')
+            def mask_hls(image):
+                wtr = image.select('WTR_Water_classification')
+                return wtr.updateMask(wtr.lt(252))
+            dswx_hls = dswx_hls_col.map(mask_hls).reduce(ee.Reducer.mode()).rename('WTR_Water_classification').clip(roi)
+            wtr_remapped_hls = dswx_hls.remap([0, 1, 2, 252, 253, 254], [0, 1, 2, 3, 4, 5])
+            wtr_palette_hls = ['ffffff', '0000ff', '0088ff', 'f2f2f2', 'dfdfdf', 'da00ff']
+            Map.addLayer(wtr_remapped_hls, {'min': 0, 'max': 5, 'palette': wtr_palette_hls}, 'DSWx-HLS Water Extent', opacity=op_dswx_hls)
+
+        if show_gfd:
+            gfd = ee.ImageCollection('GLOBAL_FLOOD_DB/MODIS_EVENTS/V1').filterBounds(roi)
+            gfdFloodedSum = gfd.select('flooded').sum().clip(roi)
+            durationPalette = ['c3effe', '1341e8', '051cb0', '001133']
+            Map.addLayer(gfdFloodedSum.selfMask(), {'min': 0, 'max': 10, 'palette': durationPalette}, 'GFD Flood History', opacity=op_gfd)
 
         if show_landcover:
-            landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
-            landcover_clipped = landcover.clip(roi) 
-            Map.addLayer(landcover_clipped, {}, 'Land Use (Clipped)', opacity=opacity)
-
+            landcover = ee.ImageCollection("ESA/WorldCover/v200").first().clip(roi)
+            Map.addLayer(landcover, {}, 'ESA Land Use', opacity=op_landcover)
             esa_legend_dict = {
                 'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000', 'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
                 'ต้นไม้/ป่าไม้ (สีเขียวเข้ม)': '006400', 'ทุ่งหญ้า (สีเหลือง)': 'ffff4c',
@@ -153,10 +223,34 @@ with st.sidebar:
             }
             Map.add_legend(title="การใช้ที่ดิน", legend_dict=esa_legend_dict)
 
+        if show_dw:
+            dw_col = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi).filterDate('2023-01-01', '2024-01-01')
+            dw_image = dw_col.select('label').mode().clip(roi)
+            dw_vis = {'min': 0, 'max': 8, 'palette': ['419bdf', '397d49', '88b053', '7a87c6', 'e49635', 'dfc35a', 'c4281b', 'a59b8f', 'b39fe1']}
+            Map.addLayer(dw_image, dw_vis, 'Dynamic World LULC', opacity=op_dw)
+
+        if show_chirts:
+            chirts_dataset = ee.ImageCollection('UCSB-CHG/CHIRTS/DAILY').filter(ee.Filter.date('2016-05-01', '2016-05-31'))
+            max_temp = chirts_dataset.select('maximum_temperature').mean().clip(roi)
+            temp_vis = {'min': 10, 'max': 40, 'palette': ['darkblue', 'blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'darkred']}
+            Map.addLayer(max_temp, temp_vis, 'CHIRTS Max Temp', opacity=op_chirts)
+
+        if show_urban:
+            urban_image = ee.Image("JRC/GHSL/P2023A/GHS_SMOD_V2-0/2030").select('smod_code').clip(roi)
+            Map.addLayer(urban_image, {}, 'Degree of Urbanization', opacity=op_urban)
+
+        if show_pop:
+            pop_image = ee.Image('JRC/GHSL/P2023A/GHS_POP/2020').clip(roi)
+            pop_image = pop_image.updateMask(pop_image.gt(0))
+            pop_vis = {'min': 0.0, 'max': 100.0, 'palette': ['000004', '320A5A', '781B6C', 'BB3654', 'EC6824', 'FBB41A', 'FCFFA4']}
+            Map.addLayer(pop_image, pop_vis, 'Population Density 2020', opacity=op_pop)
+
+        # 📊 คำนวณสถิติพื้นที่
+        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("### 📊 Area Statistics")
-        if show_landcover and st.button("📈 เริ่มการคำนวณสถิติพื้นที่"):
+        if show_landcover and st.button("📈 เริ่มการคำนวณสถิติพื้นที่ (จาก ESA Land Cover)"):
             with st.spinner("AI กำลังสแกนพื้นที่และประมวลผลข้อมูล..."):
-                stats = landcover_clipped.reduceRegion(
+                stats = landcover.reduceRegion(
                     reducer=ee.Reducer.frequencyHistogram(), geometry=roi.geometry(), scale=100, maxPixels=1e9
                 ).getInfo()
 
