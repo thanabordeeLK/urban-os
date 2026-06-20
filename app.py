@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 st.set_page_config(layout="wide", page_title="Urban OS", page_icon="🌐")
 
 # ==========================================
-# 🎨 2. ฝัง CSS ตกแต่ง UI ใหม่ 
+# 🎨 2. ฝัง CSS ตกแต่ง UI สไตล์ AI Cyberpunk
 # ==========================================
 st.markdown("""
 <style>
@@ -63,6 +63,7 @@ Map = geemap.Map(center=map_center, zoom=map_zoom, ee_initialize=False)
 # 4. จัดการแถบเมนูด้านข้าง (Sidebar)
 with st.sidebar:
     st.markdown("<h3 style='text-align: center; margin-bottom: 20px;'>⚙️ CONTROL PANEL</h3>", unsafe_allow_html=True)
+    
     selected_mode = option_menu(
         menu_title=None, 
         options=["General Plan", "AI Simulation"],
@@ -78,6 +79,51 @@ with st.sidebar:
     )
     st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
+    # 📍 ระบบค้นหาและกำหนดพื้นที่ระดับสากล (ใช้ร่วมกันทั้ง 2 โหมด)
+    st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
+
+    @st.cache_data
+    def get_provinces():
+        fc = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
+        return sorted(fc.aggregate_array('ADM1_NAME').getInfo())
+
+    @st.cache_data
+    def get_districts(province_name):
+        fc = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.eq('ADM1_NAME', province_name))
+        return sorted(fc.aggregate_array('ADM2_NAME').getInfo())
+
+    provinces = get_provinces()
+    default_prov_idx = provinces.index("Uttaradit") if "Uttaradit" in provinces else 0
+    selected_province = st.selectbox("เลือกจังหวัด (Province)", provinces, index=default_prov_idx)
+
+    districts = get_districts(selected_province)
+    default_dist_idx = districts.index("Tha Pla") if "Tha Pla" in districts else 0
+    dist_options = ["-- วิเคราะห์ทั้งจังหวัด --"] + districts
+    selected_district = st.selectbox("เลือกอำเภอ (District)", dist_options, index=default_dist_idx + 1 if "Tha Pla" in districts else 0)
+
+    # สร้างขอบเขตพื้นที่ (ROI)
+    if selected_district != "-- วิเคราะห์ทั้งจังหวัด --":
+        roi = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.And(
+            ee.Filter.eq('ADM1_NAME', selected_province),
+            ee.Filter.eq('ADM2_NAME', selected_district)
+        ))
+    else:
+        roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
+
+    # วาดเส้นขอบเขตพื้นที่เป้าหมาย
+    Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary')
+
+    # ระบบล็อกความจำพิกัดแผนที่ ไม่ให้เด้งหลุดตอนซูม
+    if "last_location" not in st.session_state:
+        st.session_state["last_location"] = (selected_province, selected_district)
+        Map.centerObject(roi)
+    else:
+        if st.session_state["last_location"] != (selected_province, selected_district):
+            st.session_state["last_location"] = (selected_province, selected_district)
+            Map.centerObject(roi)
+
+    st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
+
     # ==========================================
     # โหมดที่ 1: งานแผนทั่วไป
     # ==========================================
@@ -86,52 +132,6 @@ with st.sidebar:
         basemap_choice = st.selectbox("🗺️ Basemap", ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN"])
         Map.add_basemap(basemap_choice)
 
-        @st.cache_data
-        def get_provinces():
-            fc = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM0_NAME', 'Thailand'))
-            return sorted(fc.aggregate_array('ADM1_NAME').getInfo())
-
-        @st.cache_data
-        def get_districts(province_name):
-            fc = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.eq('ADM1_NAME', province_name))
-            return sorted(fc.aggregate_array('ADM2_NAME').getInfo())
-
-        # 📍 ระบบค้นหาและโฟกัสพื้นที่
-        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
-        st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
-
-        provinces = get_provinces()
-        default_prov_idx = provinces.index("Uttaradit") if "Uttaradit" in provinces else 0
-        selected_province = st.selectbox("เลือกจังหวัด (Province)", provinces, index=default_prov_idx)
-
-        districts = get_districts(selected_province)
-        default_dist_idx = districts.index("Tha Pla") if "Tha Pla" in districts else 0
-        dist_options = ["-- วิเคราะห์ทั้งจังหวัด --"] + districts
-        selected_district = st.selectbox("เลือกอำเภอ (District)", dist_options, index=default_dist_idx + 1 if "Tha Pla" in districts else 0)
-
-        # สร้างขอบเขตพื้นที่ (ROI)
-        if selected_district != "-- วิเคราะห์ทั้งจังหวัด --":
-            roi = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.And(
-                ee.Filter.eq('ADM1_NAME', selected_province),
-                ee.Filter.eq('ADM2_NAME', selected_district)
-            ))
-        else:
-            roi = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', selected_province))
-
-        # วาดเส้นขอบเขต
-        Map.addLayer(ee.Image().paint(roi, 0, 3), {'palette': ['00F2FE']}, f'Boundary: {selected_district}')
-
-        # ล็อกพิกัด
-        if "last_location" not in st.session_state:
-            st.session_state["last_location"] = (selected_province, selected_district)
-            Map.centerObject(roi)
-        else:
-            if st.session_state["last_location"] != (selected_province, selected_district):
-                st.session_state["last_location"] = (selected_province, selected_district)
-                Map.centerObject(roi)
-
-        # 🌍 ชั้นข้อมูล และ Data Masking
-        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("**🌍 ข้อมูลกายภาพ (Physical)**")
         show_landcover = st.checkbox("🟢 ESA Land Cover (การใช้ที่ดิน)", value=True)
         opacity = st.slider("Opacity (ความโปร่งแสง)", 0.0, 1.0, 0.7)
@@ -142,29 +142,19 @@ with st.sidebar:
             Map.addLayer(landcover_clipped, {}, 'Land Use (Clipped)', opacity=opacity)
 
             esa_legend_dict = {
-                'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000',
-                'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
-                'ต้นไม้/ป่าไม้ (สีเขียวเข้ม)': '006400',
-                'ทุ่งหญ้า (สีเหลือง)': 'ffff4c',
-                'พุ่มไม้ (สีส้ม)': 'ffbb22',
-                'แหล่งน้ำ (สีน้ำเงิน)': '0064c8',
-                'พื้นที่ชุ่มน้ำ (สีฟ้าอมเขียว)': '0096a0',
-                'ป่าชายเลน (สีเขียวสว่าง)': '00cf75',
+                'สิ่งปลูกสร้าง/เมือง (สีแดง)': 'fa0000', 'พื้นที่เกษตรกรรม (สีชมพู)': 'f096ff',
+                'ต้นไม้/ป่าไม้ (สีเขียวเข้ม)': '006400', 'ทุ่งหญ้า (สีเหลือง)': 'ffff4c',
+                'พุ่มไม้ (สีส้ม)': 'ffbb22', 'แหล่งน้ำ (สีน้ำเงิน)': '0064c8',
+                'พื้นที่ชุ่มน้ำ (สีฟ้าอมเขียว)': '0096a0', 'ป่าชายเลน (สีเขียวสว่าง)': '00cf75',
                 'พื้นที่ว่างเปล่า (สีเทา)': 'b4b4b4'
             }
             Map.add_legend(title="การใช้ที่ดิน", legend_dict=esa_legend_dict)
 
-        # 📊 Area Statistics
-        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("### 📊 Area Statistics")
-
         if show_landcover and st.button("📈 เริ่มการคำนวณสถิติพื้นที่"):
             with st.spinner("AI กำลังสแกนพื้นที่และประมวลผลข้อมูล..."):
                 stats = landcover_clipped.reduceRegion(
-                    reducer=ee.Reducer.frequencyHistogram(),
-                    geometry=roi.geometry(),
-                    scale=100,
-                    maxPixels=1e9
+                    reducer=ee.Reducer.frequencyHistogram(), geometry=roi.geometry(), scale=100, maxPixels=1e9
                 ).getInfo()
 
                 if 'Map' in stats:
@@ -174,7 +164,6 @@ with st.sidebar:
                         '40': 'เกษตรกรรม', '50': 'สิ่งปลูกสร้าง/เมือง',
                         '60': 'พื้นที่ว่างเปล่า', '80': 'แหล่งน้ำ', '90': 'พื้นที่ชุ่มน้ำ', '95': 'ป่าชายเลน'
                     }
-
                     df_data = []
                     for key, val in raw_data.items():
                         name = esa_names.get(key, f"ประเภท {key}")
@@ -196,7 +185,12 @@ with st.sidebar:
         uploaded_file = st.file_uploader("Upload Shapefile / KML", type=['zip', 'kml'])
         
         st.markdown("### 🔍 2. Spatial Analysis")
-        analysis_type = st.selectbox("Model Type", ["-- เลือกโมเดล --", "Flood Risk Simulation", "Land Suitability", "Urban Growth Tracking"])
+        analysis_type = st.selectbox("Model Type", ["Urban Growth Tracking", "Flood Risk Simulation", "Land Suitability"])
+        
+        # แสดงเมนูย่อยเฉพาะเมื่อเลือกโหมดติดตามการโตของเมือง
+        if analysis_type == "Urban Growth Tracking":
+            st.info("💡 โมเดล AI จะวิเคราะห์การขยายตัวของเมืองจากความเข้มของแสงไฟและกิจกรรมทางเศรษฐกิจช่วงปี 2015 เทียบกับปัจจุบัน")
+            timeline = st.select_slider("ช่วงปีที่ต้องการเปรียบเทียบ", options=["2015 vs 2023"], value="2015 vs 2023")
         
         st.markdown("### 📈 3. Predictive Modeling")
         predict_years = st.slider("Forecast Timeline (Years)", 1, 30, 5)
@@ -205,10 +199,40 @@ with st.sidebar:
         sim_tool = st.radio("Simulation Tools", ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"])
         
         st.write("") 
-        if st.button("▶️ RUN AI ENGINE"):
-            st.success("Compute Engine Active: กำลังเตรียมทรัพยากรประมวลผล...")
+        
+        # ปุ่มเริ่มกระบวนการคำนวณของ AI
+        run_ai = st.button("▶️ RUN AI ENGINE")
 
-# 5. แสดงผลแผนที่หลัก และเปิดระบบดักจับพิกัด
+# 5. ประมวลผลแผนที่หลักและเปิดระบบดักจับพิกัด
+# หากมีการกดรัน AI Engine ในส่วนวิเคราะห์การเติบโตของเมือง
+if selected_mode == "AI Simulation" and analysis_type == "Urban Growth Tracking" and run_ai:
+    with st.spinner("🧠 GEO AI Engine กำลังประมวลผลการคำนวณความแตกต่างเชิงพื้นที่ย้อนหลัง..."):
+        # 1. ดึงข้อมูลแสงไฟปี 2015 (อดีต)
+        viirs_2015 = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+            .filterDate('2015-01-01', '2015-12-31').median().select('avg_rad').clip(roi)
+            
+        # 2. ดึงข้อมูลแสงไฟปี 2023 (ปัจจุบัน)
+        viirs_2023 = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')\
+            .filterDate('2023-01-01', '2023-12-31').median().select('avg_rad').clip(roi)
+        
+        # 3. ใช้ตรรกะ AI คัดกรองจุดที่โตขึ้น (ตั้งเกณฑ์ค่าความสว่างแสงไฟ > 3)
+        urban_past = viirs_2015.gt(3)
+        urban_present = viirs_2023.gt(3)
+        
+        # จุดที่ปัจจุบันมีแสงไฟ แต่ในอดีตไม่มี = พื้นที่เมืองขยายตัวใหม่ (New Growth)
+        urban_growth = urban_present.And(urban_past.Not())
+        
+        # 4. แสดงผลชั้นข้อมูลลงบนแผนที่ด้วยสีชมพูนีออนสว่างวาบ
+        Map.addLayer(viirs_2023, {'min': 0, 'max': 20, 'palette': ['black', 'purple', 'blue']}, 'Base: Nighttime Lights 2023', False)
+        Map.addLayer(urban_growth.updateMask(urban_growth), {'palette': ['#FF007F']}, '📈 New Urban Growth (พื้นที่ขยายตัวใหม่)')
+        
+        # ทำกล่องคำอธิบายสีสำหรับการเติบโตของเมือง
+        growth_legend = {'พื้นที่เมืองขยายตัวใหม่ (2015-2023)': 'FF007F'}
+        Map.add_legend(title="ผลลัพธ์ GEO AI", legend_dict=growth_legend)
+        
+        st.toast("🧠 AI จำลองโมเดลเสร็จสิ้น! แสดงแถบสีชมพูในจุดที่เมืองขยายตัว", icon="✨")
+
+# เรนเดอร์แผนที่ลงหน้าจอ
 st_folium(
     Map, 
     key="urban_map", 
