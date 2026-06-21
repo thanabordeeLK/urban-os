@@ -9,7 +9,6 @@ from services.statistics_service import calculate_esa_landcover_statistics
 
 # ---------------------------------------------------------
 # Fallback dataset catalog
-# ใช้กรณี config.datasets.DATASET_CATALOG ไม่มีบาง key
 # ---------------------------------------------------------
 FALLBACK_DATASET_CATALOG = {
     "copernicus_dem": {"id": "COPERNICUS/DEM/GLO30"},
@@ -24,24 +23,42 @@ FALLBACK_DATASET_CATALOG = {
 
 
 # ---------------------------------------------------------
-# Fallback visual parameters
-# ใช้กรณี config.datasets.VIS_PARAMS ไม่มีบาง key
+# Classified visual parameters
+# สีในนี้ต้องตรงกับ legend เสมอ
 # ---------------------------------------------------------
 FALLBACK_VIS_PARAMS = {
-    "copernicus_dem": {
-        "min": 0,
-        "max": 1000,
-        "palette": ["006633", "E5FFCC", "662A00", "D8D8D8", "F5F5F5"],
+    "copernicus_dem_class": {
+        "min": 1,
+        "max": 5,
+        "palette": [
+            "1a9850",  # 1 ต่ำมาก
+            "91cf60",  # 2 ต่ำ
+            "ffffbf",  # 3 ปานกลาง
+            "fc8d59",  # 4 สูง
+            "d73027",  # 5 สูงมาก
+        ],
     },
     "dswx_s1": {
         "min": 0,
         "max": 5,
-        "palette": ["ffffff", "0000ff", "0088ff", "f2f2f2", "dfdfdf", "da00ff"],
+        "palette": [
+            "ffffff",
+            "0000ff",
+            "0088ff",
+            "f2f2f2",
+            "dfdfdf",
+            "da00ff",
+        ],
     },
-    "global_flood_db": {
-        "min": 0,
-        "max": 10,
-        "palette": ["c3effe", "1341e8", "051cb0", "001133"],
+    "global_flood_db_class": {
+        "min": 1,
+        "max": 4,
+        "palette": [
+            "f7fbff",  # 1 ไม่พบประวัติน้ำท่วม
+            "9ecae1",  # 2 น้ำท่วมต่ำ
+            "3182bd",  # 3 น้ำท่วมปานกลาง
+            "08519c",  # 4 น้ำท่วมสูง
+        ],
     },
     "esa_worldcover_display": {
         "min": 0,
@@ -75,18 +92,15 @@ FALLBACK_VIS_PARAMS = {
             "b39fe1",  # Snow & ice
         ],
     },
-    "chirts": {
-        "min": 20,
-        "max": 40,
+    "chirts_class": {
+        "min": 1,
+        "max": 5,
         "palette": [
-            "00008b",
-            "0000ff",
-            "00ffff",
-            "008000",
-            "ffff00",
-            "ffa500",
-            "ff0000",
-            "8b0000",
+            "0000ff",  # 1 < 24°C
+            "00ffff",  # 2 24–28°C
+            "ffff00",  # 3 28–32°C
+            "ff0000",  # 4 32–36°C
+            "8b0000",  # 5 > 36°C
         ],
     },
     "ghsl_smod_display": {
@@ -103,42 +117,42 @@ FALLBACK_VIS_PARAMS = {
             "bd0026",  # 7 Urban centre
         ],
     },
-    "ghsl_pop": {
-        "min": 0.0,
-        "max": 100.0,
+    "ghsl_pop_class": {
+        "min": 1,
+        "max": 5,
         "palette": [
-            "000004",
-            "320A5A",
-            "781B6C",
-            "BB3654",
-            "EC6824",
-            "FBB41A",
-            "FCFFA4",
+            "ffffcc",  # 1 ต่ำมาก
+            "c2e699",  # 2 ต่ำ
+            "78c679",  # 3 ปานกลาง
+            "31a354",  # 4 สูง
+            "006837",  # 5 สูงมาก
         ],
     },
 }
 
 
 # ---------------------------------------------------------
-# Fallback legends
-# ใช้ในกรณี config.datasets.LEGENDS ยังไม่มี key บางตัว
+# Classified legends
+# legend ต้องตรงกับ class และสีใน FALLBACK_VIS_PARAMS
 # ---------------------------------------------------------
 FALLBACK_LEGENDS = {
-    "copernicus_dem": {
-        "DEM: พื้นที่ต่ำ": "006633",
-        "DEM: พื้นที่ราบ/เนินต่ำ": "E5FFCC",
-        "DEM: พื้นที่สูง": "662A00",
-        "DEM: ภูเขาสูง": "D8D8D8",
+    "copernicus_dem_class": {
+        "DEM: 0–50 ม. พื้นที่ต่ำ": "1a9850",
+        "DEM: 50–200 ม. ที่ราบ/เนินต่ำ": "91cf60",
+        "DEM: 200–500 ม. เนินเขา": "ffffbf",
+        "DEM: 500–1,000 ม. พื้นที่สูง": "fc8d59",
+        "DEM: > 1,000 ม. ภูเขาสูง": "d73027",
     },
     "dswx_s1": {
         "DSWx-S1: น้ำผิวดิน": "0000ff",
         "DSWx-S1: น้ำท่วมขัง/น้ำชั่วคราว": "0088ff",
         "DSWx-S1: ไม่มีข้อมูล/เงา/เมฆ": "dfdfdf",
     },
-    "global_flood_db": {
-        "Flood History: น้ำท่วมสะสมต่ำ": "c3effe",
-        "Flood History: น้ำท่วมสะสมปานกลาง": "1341e8",
-        "Flood History: น้ำท่วมสะสมสูง": "001133",
+    "global_flood_db_class": {
+        "Flood: ไม่พบประวัติน้ำท่วม": "f7fbff",
+        "Flood: ท่วม 1–2 ครั้ง": "9ecae1",
+        "Flood: ท่วม 3–5 ครั้ง": "3182bd",
+        "Flood: ท่วมมากกว่า 5 ครั้ง": "08519c",
     },
     "esa_worldcover": {
         "ESA: ป่าไม้ / Trees": "006400",
@@ -161,26 +175,29 @@ FALLBACK_LEGENDS = {
         "DW: สิ่งปลูกสร้าง / Built area": "c4281b",
         "DW: ดินโล่ง / Bare ground": "a59b8f",
     },
-    "chirts": {
-        "CHIRTS: อุณหภูมิต่ำ": "00008b",
-        "CHIRTS: อุณหภูมิปานกลาง": "ffff00",
-        "CHIRTS: อุณหภูมิสูง": "ff0000",
-        "CHIRTS: อุณหภูมิสูงมาก": "8b0000",
+    "chirts_class": {
+        "CHIRTS: < 24°C ต่ำมาก": "0000ff",
+        "CHIRTS: 24–28°C ต่ำ/ค่อนข้างเย็น": "00ffff",
+        "CHIRTS: 28–32°C ปานกลาง": "ffff00",
+        "CHIRTS: 32–36°C สูง": "ff0000",
+        "CHIRTS: > 36°C สูงมาก": "8b0000",
     },
     "ghsl_smod": {
         "GHSL: น้ำ": "419bdf",
         "GHSL: พื้นที่ชนบทมาก": "ffffcc",
         "GHSL: ชุมชนชนบท": "c2e699",
+        "GHSL: ชนบทความหนาแน่นต่ำ": "78c679",
         "GHSL: ชานเมือง": "31a354",
         "GHSL: เมืองกึ่งหนาแน่น": "006837",
         "GHSL: กลุ่มเมืองหนาแน่น": "fd8d3c",
         "GHSL: ศูนย์กลางเมืองหนาแน่น": "bd0026",
     },
-    "ghsl_pop": {
-        "Population: ความหนาแน่นต่ำ": "320A5A",
-        "Population: ความหนาแน่นปานกลาง": "BB3654",
-        "Population: ความหนาแน่นสูง": "FBB41A",
-        "Population: ความหนาแน่นสูงมาก": "FCFFA4",
+    "ghsl_pop_class": {
+        "Population: 1–10 คน/พิกเซล ต่ำมาก": "ffffcc",
+        "Population: 10–50 คน/พิกเซล ต่ำ": "c2e699",
+        "Population: 50–100 คน/พิกเซล ปานกลาง": "78c679",
+        "Population: 100–500 คน/พิกเซล สูง": "31a354",
+        "Population: > 500 คน/พิกเซล สูงมาก": "006837",
     },
 }
 
@@ -189,10 +206,6 @@ FALLBACK_LEGENDS = {
 # Helper functions
 # ---------------------------------------------------------
 def get_dataset_id(key: str) -> str:
-    """
-    ดึง dataset id จาก config.datasets.DATASET_CATALOG
-    ถ้าไม่มีให้ใช้ fallback
-    """
     if key in DATASET_CATALOG and "id" in DATASET_CATALOG[key]:
         return DATASET_CATALOG[key]["id"]
 
@@ -201,28 +214,34 @@ def get_dataset_id(key: str) -> str:
 
 def get_vis_params(key: str) -> dict:
     """
-    ดึง visual parameters จาก config.datasets.VIS_PARAMS
-    ถ้าไม่มี หรือเป็น dict ว่าง ให้ใช้ fallback
+    ใช้ fallback ก่อนสำหรับ classified layer
+    เพื่อป้องกัน config เก่าดึง continuous palette มาใช้ผิด
     """
+    if key in FALLBACK_VIS_PARAMS:
+        return FALLBACK_VIS_PARAMS[key]
+
     vis = VIS_PARAMS.get(key)
 
     if isinstance(vis, dict) and len(vis) > 0:
         return vis
 
-    return FALLBACK_VIS_PARAMS.get(key, {})
+    return {}
 
 
 def get_legend(key: str) -> dict:
     """
-    ดึง legend จาก config.datasets.LEGENDS
-    ถ้าไม่มี หรือเป็น dict ว่าง ให้ใช้ fallback legend
+    ใช้ fallback ก่อนสำหรับ classified legend
+    เพื่อให้ legend ตรงกับ classified layer เสมอ
     """
+    if key in FALLBACK_LEGENDS:
+        return FALLBACK_LEGENDS[key]
+
     legend = LEGENDS.get(key)
 
     if isinstance(legend, dict) and len(legend) > 0:
         return legend
 
-    return FALLBACK_LEGENDS.get(key, {})
+    return {}
 
 
 # ---------------------------------------------------------
@@ -234,19 +253,9 @@ def add_general_plan_layers(
     is_whole_country: bool,
     layer_settings: dict,
 ) -> dict:
-    """
-    เพิ่ม layer ทั้งหมดของโหมด General Plan
-
-    Returns:
-        dict: master_legend
-    """
-
     master_legend = {}
     landcover = None
 
-    # -----------------------------------------------------
-    # Copernicus DEM
-    # -----------------------------------------------------
     if layer_settings.get("show_cop_dem"):
         try:
             add_copernicus_dem(
@@ -255,13 +264,10 @@ def add_general_plan_layers(
                 is_whole_country=is_whole_country,
                 opacity=layer_settings.get("op_cop_dem", 0.7),
             )
-            master_legend.update(get_legend("copernicus_dem"))
+            master_legend.update(get_legend("copernicus_dem_class"))
         except Exception as exc:
             st.warning(f"โหลด Copernicus DEM ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # DSWx-S1
-    # -----------------------------------------------------
     if layer_settings.get("show_dswx_s1"):
         try:
             add_dswx_s1(
@@ -274,9 +280,6 @@ def add_general_plan_layers(
         except Exception as exc:
             st.warning(f"โหลด DSWx-S1 ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # Global Flood Database
-    # -----------------------------------------------------
     if layer_settings.get("show_gfd"):
         try:
             add_global_flood_database(
@@ -285,13 +288,10 @@ def add_general_plan_layers(
                 is_whole_country=is_whole_country,
                 opacity=layer_settings.get("op_gfd", 0.7),
             )
-            master_legend.update(get_legend("global_flood_db"))
+            master_legend.update(get_legend("global_flood_db_class"))
         except Exception as exc:
             st.warning(f"โหลด Global Flood Database ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # ESA WorldCover
-    # -----------------------------------------------------
     if layer_settings.get("show_landcover"):
         try:
             landcover = add_esa_landcover(
@@ -304,9 +304,6 @@ def add_general_plan_layers(
         except Exception as exc:
             st.warning(f"โหลด ESA Land Cover ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # Dynamic World
-    # -----------------------------------------------------
     if layer_settings.get("show_dw"):
         try:
             add_dynamic_world(
@@ -319,9 +316,6 @@ def add_general_plan_layers(
         except Exception as exc:
             st.warning(f"โหลด Dynamic World ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # CHIRTS Max Temperature
-    # -----------------------------------------------------
     if layer_settings.get("show_chirts"):
         try:
             add_chirts_max_temp(
@@ -330,13 +324,10 @@ def add_general_plan_layers(
                 is_whole_country=is_whole_country,
                 opacity=layer_settings.get("op_chirts", 0.7),
             )
-            master_legend.update(get_legend("chirts"))
+            master_legend.update(get_legend("chirts_class"))
         except Exception as exc:
             st.warning(f"โหลด CHIRTS Max Temperature ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # GHSL Urbanization
-    # -----------------------------------------------------
     if layer_settings.get("show_urban"):
         try:
             add_ghsl_urbanization(
@@ -349,9 +340,6 @@ def add_general_plan_layers(
         except Exception as exc:
             st.warning(f"โหลด GHSL Urbanization ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # GHSL Population
-    # -----------------------------------------------------
     if layer_settings.get("show_pop"):
         try:
             add_ghsl_population(
@@ -360,13 +348,10 @@ def add_general_plan_layers(
                 is_whole_country=is_whole_country,
                 opacity=layer_settings.get("op_pop", 0.7),
             )
-            master_legend.update(get_legend("ghsl_pop"))
+            master_legend.update(get_legend("ghsl_pop_class"))
         except Exception as exc:
             st.warning(f"โหลด GHSL Population ไม่สำเร็จ: {exc}")
 
-    # -----------------------------------------------------
-    # Custom Legend
-    # -----------------------------------------------------
     if master_legend:
         add_custom_legend(
             Map=Map,
@@ -386,7 +371,7 @@ def add_general_plan_layers(
 
 
 # ---------------------------------------------------------
-# Layer functions
+# Layer functions: classified continuous layers
 # ---------------------------------------------------------
 def add_copernicus_dem(Map, roi, is_whole_country: bool, opacity: float) -> None:
     dem = (
@@ -397,10 +382,19 @@ def add_copernicus_dem(Map, roi, is_whole_country: bool, opacity: float) -> None
 
     dem = safe_clip(dem, roi, is_whole_country)
 
+    dem_class = (
+        ee.Image(1)
+        .where(dem.gte(50), 2)
+        .where(dem.gte(200), 3)
+        .where(dem.gte(500), 4)
+        .where(dem.gte(1000), 5)
+        .rename("DEM_Class")
+    )
+
     Map.addLayer(
-        dem,
-        get_vis_params("copernicus_dem"),
-        "Copernicus DEM 30m",
+        dem_class,
+        get_vis_params("copernicus_dem_class"),
+        "Copernicus DEM Classified",
         opacity=opacity,
     )
 
@@ -430,30 +424,32 @@ def add_dswx_s1(Map, roi, is_whole_country: bool, opacity: float) -> None:
 
 
 def add_global_flood_database(Map, roi, is_whole_country: bool, opacity: float) -> None:
-    gfd_flooded_sum = (
+    flood_sum = (
         ee.ImageCollection(get_dataset_id("global_flood_db"))
         .filterBounds(roi)
         .select("flooded")
         .sum()
     )
 
-    gfd_flooded_sum = safe_clip(gfd_flooded_sum, roi, is_whole_country)
+    flood_sum = safe_clip(flood_sum, roi, is_whole_country)
+
+    flood_class = (
+        ee.Image(1)
+        .where(flood_sum.gt(0), 2)
+        .where(flood_sum.gt(2), 3)
+        .where(flood_sum.gt(5), 4)
+        .rename("Flood_History_Class")
+    )
 
     Map.addLayer(
-        gfd_flooded_sum.selfMask(),
-        get_vis_params("global_flood_db"),
-        "Global Flood Database",
+        flood_class,
+        get_vis_params("global_flood_db_class"),
+        "Global Flood Database Classified",
         opacity=opacity,
     )
 
 
 def add_esa_landcover(Map, roi, is_whole_country: bool, opacity: float):
-    """
-    ESA WorldCover:
-    - ใช้ภาพ original สำหรับคำนวณสถิติ
-    - ใช้ remap 0..10 สำหรับแสดงผล categorical palette ให้สีตรง legend
-    """
-
     landcover = (
         ee.ImageCollection(get_dataset_id("esa_worldcover"))
         .first()
@@ -506,21 +502,24 @@ def add_chirts_max_temp(Map, roi, is_whole_country: bool, opacity: float) -> Non
 
     max_temp = safe_clip(max_temp, roi, is_whole_country)
 
+    temp_class = (
+        ee.Image(1)
+        .where(max_temp.gte(24), 2)
+        .where(max_temp.gte(28), 3)
+        .where(max_temp.gte(32), 4)
+        .where(max_temp.gte(36), 5)
+        .rename("CHIRTS_Temp_Class")
+    )
+
     Map.addLayer(
-        max_temp,
-        get_vis_params("chirts"),
-        "CHIRTS Maximum Temperature",
+        temp_class,
+        get_vis_params("chirts_class"),
+        "CHIRTS Max Temp Classified",
         opacity=opacity,
     )
 
 
 def add_ghsl_urbanization(Map, roi, is_whole_country: bool, opacity: float) -> None:
-    """
-    GHSL SMOD:
-    - ใช้ smod_code original
-    - remap เป็น 0..7 เพื่อแสดงสีแบบ categorical
-    """
-
     urban_image = (
         ee.Image(get_dataset_id("ghsl_smod"))
         .select("smod_code")
@@ -547,10 +546,21 @@ def add_ghsl_population(Map, roi, is_whole_country: bool, opacity: float) -> Non
     pop_image = safe_clip(pop_image, roi, is_whole_country)
     pop_image = pop_image.updateMask(pop_image.gt(0))
 
+    pop_class = (
+        ee.Image(1)
+        .where(pop_image.gte(10), 2)
+        .where(pop_image.gte(50), 3)
+        .where(pop_image.gte(100), 4)
+        .where(pop_image.gte(500), 5)
+        .rename("GHSL_Population_Class")
+    )
+
+    pop_class = pop_class.updateMask(pop_image.gt(0))
+
     Map.addLayer(
-        pop_image,
-        get_vis_params("ghsl_pop"),
-        "GHSL Population",
+        pop_class,
+        get_vis_params("ghsl_pop_class"),
+        "GHSL Population Classified",
         opacity=opacity,
     )
 
@@ -564,10 +574,6 @@ def render_landcover_stats_button(
     is_whole_country: bool,
     show_landcover: bool,
 ) -> None:
-    """
-    ปุ่มคำนวณสถิติพื้นที่จาก ESA Land Cover
-    """
-
     st.sidebar.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
     if not show_landcover:
