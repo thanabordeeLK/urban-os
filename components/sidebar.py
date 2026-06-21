@@ -11,9 +11,34 @@ from config.settings import (
 from services.roi_service import get_provinces, get_districts, get_roi
 
 
+# ---------------------------------------------------------
+# Basemap options
+# ต้องสอดคล้องกับ BASEMAP_ALIASES ใน components/map_renderer.py
+# ---------------------------------------------------------
+BASEMAP_OPTIONS = [
+    "OpenStreetMap",
+    "Esri Satellite",
+    "Esri Topographic",
+    "CartoDB Positron",
+    "CartoDB Dark",
+]
+
+
 def render_sidebar() -> dict:
     """
     แสดง UI ด้านซ้ายทั้งหมด และคืนค่าการตั้งค่าที่ผู้ใช้เลือก
+
+    Return:
+        dict:
+            selected_mode
+            selected_province
+            selected_district
+            is_whole_country
+            roi
+            basemap_choice
+            layer_settings
+            ai_settings
+            suitability_config
     """
 
     with st.sidebar:
@@ -53,48 +78,8 @@ def render_sidebar() -> dict:
         )
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
-        st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
 
-        provinces_list = [THAILAND_ALL_LABEL] + get_provinces()
-
-        default_prov_idx = (
-            provinces_list.index(DEFAULT_PROVINCE)
-            if DEFAULT_PROVINCE in provinces_list
-            else 0
-        )
-
-        selected_province = st.selectbox(
-            "เลือกจังหวัด (Province)",
-            provinces_list,
-            index=default_prov_idx,
-        )
-
-        is_whole_country = selected_province == THAILAND_ALL_LABEL
-
-        if is_whole_country:
-            selected_district = THAILAND_DISTRICT_ALL_LABEL
-            st.selectbox(
-                "เลือกอำเภอ (District)",
-                [selected_district],
-                disabled=True,
-            )
-        else:
-            districts = get_districts(selected_province)
-            dist_options = [PROVINCE_ALL_LABEL] + districts
-
-            default_dist_idx = (
-                dist_options.index(DEFAULT_DISTRICT)
-                if DEFAULT_DISTRICT in dist_options
-                else 0
-            )
-
-            selected_district = st.selectbox(
-                "เลือกอำเภอ (District)",
-                dist_options,
-                index=default_dist_idx,
-            )
-
-        roi, is_whole_country = get_roi(selected_province, selected_district)
+        selected_province, selected_district, roi, is_whole_country = render_area_selector()
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
@@ -102,24 +87,43 @@ def render_sidebar() -> dict:
         ai_settings = {}
         suitability_config = None
 
+        # -------------------------------------------------
+        # General Plan Mode
+        # -------------------------------------------------
         if selected_mode == "General Plan":
             st.markdown("### 🥞 Data Layers (ชั้นข้อมูล)")
-            basemap_choice = st.selectbox(
-                "🗺️ Basemap (แผนที่ฐาน)",
-                ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"],
+
+            basemap_choice = render_basemap_selector(
+                key="general_basemap",
+                default="OpenStreetMap",
             )
+
             layer_settings = render_general_plan_controls()
 
+        # -------------------------------------------------
+        # AI Simulation Mode
+        # -------------------------------------------------
         elif selected_mode == "AI Simulation":
-            basemap_choice = "SATELLITE"
+            basemap_choice = render_basemap_selector(
+                key="ai_basemap",
+                default="Esri Satellite",
+            )
+
             ai_settings = render_ai_simulation_controls()
 
+        # -------------------------------------------------
+        # Suitability Analysis Mode
+        # -------------------------------------------------
         elif selected_mode == "Suitability Analysis":
-            basemap_choice = st.selectbox(
-                "🗺️ Basemap (แผนที่ฐาน)",
-                ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"],
+            basemap_choice = render_basemap_selector(
+                key="suitability_basemap",
+                default="Esri Satellite",
             )
+
             suitability_config = render_suitability_controls()
+
+        else:
+            basemap_choice = "OpenStreetMap"
 
     return {
         "selected_mode": selected_mode,
@@ -134,69 +138,252 @@ def render_sidebar() -> dict:
     }
 
 
+def render_area_selector():
+    """
+    แสดงตัวเลือกพื้นที่วิเคราะห์ จังหวัด/อำเภอ
+    """
+
+    st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
+
+    try:
+        provinces = get_provinces()
+    except Exception as e:
+        st.error(f"โหลดรายชื่อจังหวัดไม่สำเร็จ: {e}")
+        provinces = []
+
+    provinces_list = [THAILAND_ALL_LABEL] + provinces
+
+    # fallback ถ้า DEFAULT_PROVINCE ไม่มีใน GAUL list
+    if DEFAULT_PROVINCE in provinces_list:
+        default_prov_idx = provinces_list.index(DEFAULT_PROVINCE)
+    elif "Uttaradit" in provinces_list:
+        default_prov_idx = provinces_list.index("Uttaradit")
+    else:
+        default_prov_idx = 0
+
+    selected_province = st.selectbox(
+        "เลือกจังหวัด (Province)",
+        provinces_list,
+        index=default_prov_idx,
+        key="selected_province",
+    )
+
+    is_whole_country = selected_province == THAILAND_ALL_LABEL
+
+    if is_whole_country:
+        selected_district = THAILAND_DISTRICT_ALL_LABEL
+
+        st.selectbox(
+            "เลือกอำเภอ (District)",
+            [selected_district],
+            index=0,
+            disabled=True,
+            key="selected_district_country",
+        )
+
+    else:
+        try:
+            districts = get_districts(selected_province)
+        except Exception as e:
+            st.warning(f"โหลดรายชื่ออำเภอไม่สำเร็จ: {e}")
+            districts = []
+
+        dist_options = [PROVINCE_ALL_LABEL] + districts
+
+        if DEFAULT_DISTRICT in dist_options:
+            default_dist_idx = dist_options.index(DEFAULT_DISTRICT)
+        elif "Mueang Uttaradit" in dist_options:
+            default_dist_idx = dist_options.index("Mueang Uttaradit")
+        else:
+            default_dist_idx = 0
+
+        selected_district = st.selectbox(
+            "เลือกอำเภอ (District)",
+            dist_options,
+            index=default_dist_idx,
+            key="selected_district",
+        )
+
+    try:
+        roi, is_whole_country = get_roi(selected_province, selected_district)
+    except Exception as e:
+        st.error(f"สร้างพื้นที่วิเคราะห์ไม่สำเร็จ: {e}")
+        roi = None
+
+    return selected_province, selected_district, roi, is_whole_country
+
+
+def render_basemap_selector(key: str, default: str = "OpenStreetMap") -> str:
+    """
+    Basemap selector ที่ใช้ชื่อ basemap ซึ่งรองรับจริงใน map_renderer.py
+    """
+
+    if default in BASEMAP_OPTIONS:
+        default_index = BASEMAP_OPTIONS.index(default)
+    else:
+        default_index = 0
+
+    return st.selectbox(
+        "🗺️ Basemap (แผนที่ฐาน)",
+        BASEMAP_OPTIONS,
+        index=default_index,
+        key=key,
+    )
+
+
 def render_general_plan_controls() -> dict:
-    """Sidebar controls สำหรับโหมด General Plan"""
+    """
+    Sidebar controls สำหรับโหมด General Plan
+    """
 
     settings = {}
 
     st.markdown("**🌍 ข้อมูลภูมิประเทศ & แหล่งน้ำ**")
 
-    settings["show_cop_dem"] = st.checkbox("⛰️ Copernicus DEM", value=False)
+    settings["show_cop_dem"] = st.checkbox(
+        "⛰️ Copernicus DEM",
+        value=False,
+        key="show_cop_dem",
+    )
     settings["op_cop_dem"] = (
-        st.slider("ความโปร่งแสง DEM", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง DEM",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_cop_dem",
+        )
         if settings["show_cop_dem"]
         else 0.7
     )
 
-    settings["show_dswx_s1"] = st.checkbox("💧 DSWx-S1 (แหล่งน้ำ Radar)", value=False)
+    settings["show_dswx_s1"] = st.checkbox(
+        "💧 DSWx-S1 (แหล่งน้ำ Radar)",
+        value=False,
+        key="show_dswx_s1",
+    )
     settings["op_dswx_s1"] = (
-        st.slider("ความโปร่งแสง DSWx-S1", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง DSWx-S1",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_dswx_s1",
+        )
         if settings["show_dswx_s1"]
         else 0.7
     )
 
-    settings["show_gfd"] = st.checkbox("🌊 Global Flood Database", value=False)
+    settings["show_gfd"] = st.checkbox(
+        "🌊 Global Flood Database",
+        value=False,
+        key="show_gfd",
+    )
     settings["op_gfd"] = (
-        st.slider("ความโปร่งแสง ประวัติน้ำท่วม", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง ประวัติน้ำท่วม",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_gfd",
+        )
         if settings["show_gfd"]
         else 0.7
     )
 
     st.markdown("**🌱 ข้อมูลการใช้ที่ดิน & อากาศ**")
 
-    settings["show_landcover"] = st.checkbox("🟢 ESA Land Cover", value=False)
+    settings["show_landcover"] = st.checkbox(
+        "🟢 ESA Land Cover",
+        value=False,
+        key="show_landcover",
+    )
     settings["op_landcover"] = (
-        st.slider("ความโปร่งแสง ESA", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง ESA",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_landcover",
+        )
         if settings["show_landcover"]
         else 0.7
     )
 
-    settings["show_dw"] = st.checkbox("🌿 Dynamic World V1", value=False)
+    settings["show_dw"] = st.checkbox(
+        "🌿 Dynamic World V1",
+        value=False,
+        key="show_dw",
+    )
     settings["op_dw"] = (
-        st.slider("ความโปร่งแสง Dynamic World", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง Dynamic World",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_dw",
+        )
         if settings["show_dw"]
         else 0.7
     )
 
-    settings["show_chirts"] = st.checkbox("🌡️ CHIRTS Max Temp", value=False)
+    settings["show_chirts"] = st.checkbox(
+        "🌡️ CHIRTS Max Temp",
+        value=False,
+        key="show_chirts",
+    )
     settings["op_chirts"] = (
-        st.slider("ความโปร่งแสง อุณหภูมิ", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง อุณหภูมิ",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_chirts",
+        )
         if settings["show_chirts"]
         else 0.7
     )
 
     st.markdown("**🏙️ ข้อมูลความเป็นเมือง & ประชากร**")
 
-    settings["show_urban"] = st.checkbox("🏢 GHSL: Degree of Urbanization", value=False)
+    settings["show_urban"] = st.checkbox(
+        "🏢 GHSL: Degree of Urbanization",
+        value=False,
+        key="show_urban",
+    )
     settings["op_urban"] = (
-        st.slider("ความโปร่งแสง ความเป็นเมือง", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง ความเป็นเมือง",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_urban",
+        )
         if settings["show_urban"]
         else 0.7
     )
 
-    settings["show_pop"] = st.checkbox("👥 GHSL: Global Population", value=False)
+    settings["show_pop"] = st.checkbox(
+        "👥 GHSL: Global Population",
+        value=False,
+        key="show_pop",
+    )
     settings["op_pop"] = (
-        st.slider("ความโปร่งแสง ประชากร", 0.0, 1.0, 0.7)
+        st.slider(
+            "ความโปร่งแสง ประชากร",
+            0.0,
+            1.0,
+            0.7,
+            0.05,
+            key="op_pop",
+        )
         if settings["show_pop"]
         else 0.7
     )
@@ -205,15 +392,24 @@ def render_general_plan_controls() -> dict:
 
 
 def render_ai_simulation_controls() -> dict:
-    """Sidebar controls สำหรับโหมด AI Simulation"""
+    """
+    Sidebar controls สำหรับโหมด AI Simulation
+    """
 
     st.markdown("### 🏢 1. Import Data")
-    uploaded_file = st.file_uploader("Upload Shapefile / KML", type=["zip", "kml"])
+
+    uploaded_file = st.file_uploader(
+        "Upload Shapefile / KML",
+        type=["zip", "kml"],
+        key="ai_upload_file",
+    )
 
     st.markdown("### 🔍 2. Spatial Analysis")
+
     analysis_type = st.selectbox(
         "Model Type",
         ["Urban Growth Tracking", "Flood Risk Simulation"],
+        key="ai_analysis_type",
     )
 
     start_year = None
@@ -224,18 +420,31 @@ def render_ai_simulation_controls() -> dict:
             min_value=2014,
             max_value=2021,
             value=2015,
+            key="ai_start_year",
         )
 
     st.markdown("### 📈 3. Predictive Modeling")
-    predict_years = st.slider("Forecast Timeline", 1, 30, 10)
+
+    predict_years = st.slider(
+        "Forecast Timeline",
+        1,
+        30,
+        10,
+        key="ai_predict_years",
+    )
 
     st.markdown("### 🛡️ 4. Engineering Mitigation")
+
     mitigation_tool = st.radio(
         "Simulation Tools",
         ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"],
+        key="ai_mitigation_tool",
     )
 
-    run_ai = st.button("▶️ RUN AI ENGINE")
+    run_ai = st.button(
+        "▶️ RUN AI ENGINE",
+        key="run_ai_engine",
+    )
 
     return {
         "uploaded_file": uploaded_file,
@@ -248,22 +457,87 @@ def render_ai_simulation_controls() -> dict:
 
 
 def render_suitability_controls() -> dict:
-    """Sidebar controls สำหรับโหมด Suitability Analysis"""
+    """
+    Sidebar controls สำหรับโหมด Suitability Analysis
+    """
 
     st.markdown("### 🧭 Suitability Analysis")
     st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
 
-    w_slope = st.slider("Slope", 0.0, 1.0, 0.20, 0.05)
-    w_flood = st.slider("Flood Risk", 0.0, 1.0, 0.25, 0.05)
-    w_landcover = st.slider("Land Cover", 0.0, 1.0, 0.25, 0.05)
-    w_urban = st.slider("Urbanization", 0.0, 1.0, 0.20, 0.05)
-    w_water = st.slider("Water Proximity", 0.0, 1.0, 0.10, 0.05)
+    with st.expander("ℹ️ คำอธิบายปัจจัย", expanded=False):
+        st.markdown(
+            """
+            - **Slope**: พื้นที่ราบเหมาะต่อการพัฒนามากกว่า
+            - **Flood Risk**: พื้นที่เคยน้ำท่วมบ่อยจะถูกลดคะแนน
+            - **Land Cover**: พื้นที่โล่ง/พุ่มไม้เหมาะกว่า ป่า น้ำ และเมืองเดิม
+            - **Urbanization**: พื้นที่ชานเมืองได้คะแนนสูง เพราะใกล้โครงสร้างพื้นฐาน
+            - **Water Proximity**: ใกล้น้ำในระยะเหมาะสมดี แต่ชิดลำน้ำเกินไปควรจำกัด
+            """
+        )
+
+    w_slope = st.slider(
+        "Slope",
+        0.0,
+        1.0,
+        0.20,
+        0.05,
+        key="suit_w_slope",
+    )
+
+    w_flood = st.slider(
+        "Flood Risk",
+        0.0,
+        1.0,
+        0.25,
+        0.05,
+        key="suit_w_flood",
+    )
+
+    w_landcover = st.slider(
+        "Land Cover",
+        0.0,
+        1.0,
+        0.25,
+        0.05,
+        key="suit_w_landcover",
+    )
+
+    w_urban = st.slider(
+        "Urbanization",
+        0.0,
+        1.0,
+        0.20,
+        0.05,
+        key="suit_w_urban",
+    )
+
+    w_water = st.slider(
+        "Water Proximity",
+        0.0,
+        1.0,
+        0.10,
+        0.05,
+        key="suit_w_water",
+    )
 
     total_weight = w_slope + w_flood + w_landcover + w_urban + w_water
-    st.caption(f"น้ำหนักรวมปัจจุบัน: {total_weight:.2f}")
 
-    show_factor_layers = st.checkbox("แสดง Factor Layers", value=False)
-    run_suitability = st.button("▶️ Run Suitability Analysis")
+    if total_weight == 0:
+        st.warning("น้ำหนักรวมเป็น 0 กรุณาเพิ่มน้ำหนักอย่างน้อย 1 ปัจจัย")
+    else:
+        st.caption(f"น้ำหนักรวมปัจจุบัน: {total_weight:.2f}")
+        st.caption("หมายเหตุ: ระบบจะ normalize น้ำหนักให้อัตโนมัติในขั้นคำนวณ")
+
+    show_factor_layers = st.checkbox(
+        "แสดง Factor Layers",
+        value=False,
+        key="show_factor_layers",
+    )
+
+    run_suitability = st.button(
+        "▶️ Run Suitability Analysis",
+        key="run_suitability_analysis",
+    )
 
     return {
         "weights": {
