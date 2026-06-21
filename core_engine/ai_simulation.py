@@ -125,22 +125,14 @@ def get_yearly_builtup_image(
     is_whole_country: bool,
 ) -> ee.Image:
     """
-    Hybrid Built-up Detection สำหรับ Urban Growth Tracking
+    Hybrid Built-up Detection v2
 
-    ไม่ใช้ NDBI เดี่ยว เพราะ NDBI สับสนกับ:
-    - ดินแห้ง
-    - ตะกอนริมอ่างเก็บน้ำ
-    - ทราย / ลูกรัง
-    - พื้นที่โล่งสะท้อนแสงสูง
-
-    ใช้ตัวกรองร่วมกัน:
-    1. Dynamic World Built-up class / built probability
-    2. Landsat NDBI เพื่อช่วยยืนยันสิ่งปลูกสร้าง
-    3. Landsat MNDWI เพื่อตัดน้ำ
-    4. ESA WorldCover เพื่อตัดแหล่งน้ำถาวร
-    5. Dynamic World water probability เพื่อตัดน้ำรายปี
-    6. NDVI เพื่อตัดพืชหนาแน่น
-    7. Slope เพื่อลด false positive บนภูเขา/ขอบอ่างเก็บน้ำ
+    แนวคิด:
+    - ไม่ใช้ NDBI เดี่ยว เพราะจะสับสนกับดินแห้ง/ตะกอนริมอ่างเก็บน้ำ
+    - ไม่บังคับให้ Dynamic World เห็นเป็น built-up ทุกกรณี เพราะในชนบท/หมู่บ้านเล็กอาจตรวจจับไม่ครบ
+    - ใช้ 2 ช่องทางร่วมกัน:
+        1. Dynamic World Built-up candidate
+        2. Landsat Built-up candidate ที่ผ่านตัวกรองน้ำ/พืช/ความลาดชัน/ระยะจากแหล่งน้ำ
     """
 
     # -----------------------------------------------------
@@ -150,7 +142,7 @@ def get_yearly_builtup_image(
         ee.ImageCollection(DATASETS["landsat8"])
         .filterBounds(roi)
         .filterDate(f"{year}-01-01", f"{year}-12-31")
-        .filter(ee.Filter.lt("CLOUD_COVER", 30))
+        .filter(ee.Filter.lt("CLOUD_COVER", 40))
     )
 
     def calc_indices(img):
@@ -213,15 +205,10 @@ def get_yearly_builtup_image(
     # Dynamic World label:
     # 0 = water
     # 6 = built
-    built_from_dw = dw_label_mode.eq(6)
-
-    # ใช้ NDBI เป็นตัวช่วย ไม่ใช่ตัวตัดสินเดี่ยว
-    built_from_ndbi_confirmed = (
-        ndbi.gt(0.08)
-        .And(dw_built_prob.gte(0.25))
+    built_from_dw = (
+        dw_label_mode.eq(6)
+        .Or(dw_built_prob.gte(0.12))
     )
-
-    built_candidate = built_from_dw.Or(built_from_ndbi_confirmed)
 
     # -----------------------------------------------------
     # 3. ESA WorldCover hard masks
@@ -244,6 +231,18 @@ def get_yearly_builtup_image(
         .Or(esa_lc.eq(95))
     )
 
+    # สร้าง buffer รอบแหล่งน้ำถาวร เพื่อลด false positive จากดินแห้ง/ตะกอนริมอ่างเก็บน้ำ
+    # ESA WorldCover resolution ประมาณ 10m
+    dist_to_permanent_water = (
+        esa_water_or_wetland
+        .fastDistanceTransform(50)
+        .sqrt()
+        .multiply(10)
+        .rename("DistanceToPermanentWater")
+    )
+
+    far_from_permanent_water_edge = dist_to_permanent_water.gt(90)
+
     # -----------------------------------------------------
     # 4. DEM / Slope mask
     # -----------------------------------------------------
@@ -254,22 +253,38 @@ def get_yearly_builtup_image(
     )
 
     dem = safe_clip(dem, roi, is_whole_country)
-
     slope = ee.Terrain.slope(dem)
 
     # -----------------------------------------------------
-    # 5. Hybrid filter rules
+    # 5. Landsat built-up candidate
+    # -----------------------------------------------------
+    # เงื่อนไขนี้ช่วยให้หมู่บ้าน/ชุมชนเล็กที่ Dynamic World จับไม่ครบยังมีโอกาสถูกตรวจพบ
+    # แต่ต้องไม่ใช่น้ำ ไม่ใช่พืชหนาแน่น และไม่ใช่ขอบอ่างเก็บน้ำ
+    built_from_landsat = (
+        ndbi.gt(0.03)
+        .And(mndwi.lt(0.05))
+        .And(ndvi.lt(0.55))
+        .And(far_from_permanent_water_edge)
+    )
+
+    # -----------------------------------------------------
+    # 6. Water / vegetation / slope filters
     # -----------------------------------------------------
     not_water = (
         esa_water_or_wetland.Not()
         .And(dw_label_mode.neq(0))
-        .And(dw_water_prob.lt(0.35))
-        .And(mndwi.lt(0.0))
+        .And(dw_water_prob.lt(0.65))
+        .And(mndwi.lt(0.10))
     )
 
-    not_dense_vegetation = ndvi.lt(0.65)
+    not_dense_vegetation = ndvi.lt(0.70)
 
-    reasonable_slope = slope.lt(20)
+    reasonable_slope = slope.lt(25)
+
+    # -----------------------------------------------------
+    # 7. Final built-up logic
+    # -----------------------------------------------------
+    built_candidate = built_from_dw.Or(built_from_landsat)
 
     built_up = (
         built_candidate
