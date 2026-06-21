@@ -3,6 +3,7 @@ import geemap.foliumap as geemap
 import folium
 from streamlit_folium import st_folium
 from html import escape
+from branca.element import MacroElement, Template
 
 
 # ---------------------------------------------------------
@@ -307,7 +308,8 @@ def add_custom_legend(
     position: str = "bottomright",
 ):
     """
-    เพิ่ม legend แบบ HTML เอง เพื่อให้ข้อความแสดงชัดเจนบน Streamlit Cloud
+    เพิ่ม legend แบบ HTML ผ่าน branca MacroElement
+    วิธีนี้เสถียรกว่า folium.Element() บน Streamlit Cloud / st_folium
 
     Args:
         Map: folium/geemap map object
@@ -334,57 +336,71 @@ def add_custom_legend(
         safe_label = escape(str(label))
         safe_color = str(color).replace("#", "").strip()
 
+        if not safe_color:
+            safe_color = "999999"
+
         rows += f"""
-        <div style="display: flex; align-items: center; margin-bottom: 6px;">
+        <div style="display:flex; align-items:center; margin-bottom:6px;">
             <span style="
-                display: inline-block;
-                width: 18px;
-                height: 14px;
-                min-width: 18px;
-                margin-right: 8px;
-                background: #{safe_color};
-                border: 1px solid #444;
+                display:inline-block;
+                width:18px;
+                height:14px;
+                min-width:18px;
+                margin-right:8px;
+                background-color:#{safe_color};
+                border:1px solid #333333;
             "></span>
             <span style="
-                color: #111111;
-                font-size: 12px;
-                font-weight: 500;
-                line-height: 1.25;
-            ">{safe_label}</span>
+                color:#111111 !important;
+                font-size:12px;
+                font-weight:600;
+                line-height:1.25;
+                white-space:normal;
+            ">
+                {safe_label}
+            </span>
         </div>
         """
 
     legend_html = f"""
-    <div style="
+    {{% macro html(this, kwargs) %}}
+
+    <div id="urban-os-custom-legend" style="
         position: fixed;
         {pos_style}
-        z-index: 9999;
-        background-color: rgba(255, 255, 255, 0.95);
+        z-index: 999999;
+        background-color: rgba(255,255,255,0.96);
         padding: 10px 12px;
-        border: 1px solid #999;
+        border: 1px solid #777777;
         border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-        max-width: 280px;
-        max-height: 360px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+        max-width: 300px;
+        max-height: 380px;
         overflow-y: auto;
         font-family: Arial, sans-serif;
     ">
         <div style="
-            color: #000000;
-            font-weight: 700;
-            font-size: 13px;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #dddddd;
-            padding-bottom: 4px;
+            color:#000000 !important;
+            font-weight:700;
+            font-size:13px;
+            margin-bottom:8px;
+            border-bottom:1px solid #dddddd;
+            padding-bottom:5px;
         ">
             {escape(title)}
         </div>
+
         {rows}
     </div>
+
+    {{% endmacro %}}
     """
 
     try:
-        Map.get_root().html.add_child(folium.Element(legend_html))
+        legend = MacroElement()
+        legend._template = Template(legend_html)
+        Map.get_root().add_child(legend)
+
     except Exception as e:
         st.warning(f"ไม่สามารถเพิ่มคำอธิบายสัญลักษณ์ได้: {e}")
 
