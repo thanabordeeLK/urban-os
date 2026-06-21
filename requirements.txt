@@ -8,3 +8,4 @@ pandas==2.2.2
 numpy==1.26.4
 python-box==7.1.1
 xyzservices==2023.10.1
+setuptools==69.5.1
