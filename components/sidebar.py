@@ -411,9 +411,10 @@ def render_ai_simulation_controls() -> dict:
     """
     Sidebar controls สำหรับโหมด AI Simulation
 
-    รองรับ:
-    1. Urban Growth Tracking
-    2. Flood Risk Simulation
+    แก้ปัญหา:
+    - RUN AI ENGINE ไม่หายหลัง Streamlit rerun
+    - ซ่อน Planning Mitigation จาก Urban Growth เพราะยังไม่ถูกใช้ในสมการ
+    - เพิ่มปุ่ม Clear AI Result
     """
 
     st.markdown("### 🏢 1. Import Data")
@@ -437,7 +438,9 @@ def render_ai_simulation_controls() -> dict:
         key="ai_analysis_type",
     )
 
-    # ค่า default ต้องมีเสมอ เพื่อให้ return dict ไม่ขาด key
+    # -----------------------------------------------------
+    # Default values ต้องมีเสมอ เพื่อไม่ให้ return dict ขาด key
+    # -----------------------------------------------------
     start_year = 2015
     predict_years = 10
     mitigation_tool = None
@@ -470,23 +473,19 @@ def render_ai_simulation_controls() -> dict:
             key="ai_predict_years",
         )
 
-        st.markdown("### 🛡️ 4. Planning Mitigation")
-
-        mitigation_tool = st.radio(
-            "Simulation Tools",
-            ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"],
-            key="ai_mitigation_tool",
-        )
-
         with st.expander("ℹ️ คำอธิบาย Urban Growth Tracking", expanded=False):
             st.markdown(
                 """
                 โมเดลนี้ใช้ดัชนี **NDBI จาก Landsat 8** เพื่อประเมินการเพิ่มขึ้นของพื้นที่สิ่งปลูกสร้างย้อนหลัง
                 แล้วสร้างเส้นแนวโน้มเพื่อคาดการณ์การขยายตัวในอนาคต
 
+                **หมายเหตุ**
+                - ส่วน Planning Mitigation ยังไม่ถูกนำมาใช้ในสมการ Urban Growth Tracking
+                - จึงถูกซ่อนไว้ก่อน เพื่อไม่ให้ผู้ใช้เข้าใจผิดว่ามีผลต่อโมเดล
+
                 **ข้อจำกัด**
                 - NDBI อาจสับสนกับพื้นที่ดินโล่งหรือพื้นผิวสะท้อนแสงสูง
-                - ผลลัพธ์เหมาะสำหรับการดูแนวโน้มเบื้องต้น ไม่ใช่ขอบเขตสิ่งปลูกสร้างทางกฎหมาย
+                - ผลลัพธ์เหมาะสำหรับดูแนวโน้มเบื้องต้น ไม่ใช่ขอบเขตสิ่งปลูกสร้างทางกฎหมาย
                 """
             )
 
@@ -526,9 +525,20 @@ def render_ai_simulation_controls() -> dict:
         st.markdown("### 🛡️ 4. Flood Mitigation Scenario")
 
         mitigation_tool = st.radio(
-            "Simulation Tools",
-            ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"],
+            "Scenario Option",
+            [
+                "ยังไม่ใช้มาตรการ",
+                "กั้นแนวคันดิน",
+                "จำลองฝายชะลอน้ำ",
+                "ปรับแก้ระดับตลิ่ง",
+            ],
+            index=0,
             key="flood_mitigation_tool",
+        )
+
+        st.caption(
+            "หมายเหตุ: ตัวเลือก mitigation ตอนนี้เป็น scenario label เท่านั้น "
+            "ยังไม่ถูกนำไปเปลี่ยนสมการน้ำท่วมโดยตรง"
         )
 
         with st.expander("ℹ️ คำอธิบาย Flood Risk Simulation", expanded=False):
@@ -550,10 +560,47 @@ def render_ai_simulation_controls() -> dict:
                 """
             )
 
-    run_ai = st.button(
-        "▶️ RUN AI ENGINE",
-        key="run_ai_engine",
-    )
+    # -----------------------------------------------------
+    # Persistent RUN state
+    # -----------------------------------------------------
+    if "ai_run_active" not in st.session_state:
+        st.session_state["ai_run_active"] = False
+
+    st.markdown("### 🚀 5. Run Model")
+
+    col_run, col_clear = st.columns([2, 1])
+
+    with col_run:
+        run_clicked = st.button(
+            "▶️ RUN AI ENGINE",
+            key="run_ai_engine",
+            use_container_width=True,
+        )
+
+    with col_clear:
+        clear_clicked = st.button(
+            "🧹 Clear",
+            key="clear_ai_result",
+            use_container_width=True,
+        )
+
+    if run_clicked:
+        st.session_state["ai_run_active"] = True
+
+    if clear_clicked:
+        st.session_state["ai_run_active"] = False
+
+        for key in [
+            "ai_growth_trend_df",
+            "flood_simulation_summary",
+        ]:
+            if key in st.session_state:
+                del st.session_state[key]
+
+    if st.session_state.get("ai_run_active", False):
+        st.success("AI Result Active: ระบบจะคงผลวิเคราะห์ไว้จนกว่าจะกด Clear")
+    else:
+        st.info("กด RUN AI ENGINE เพื่อเริ่มวิเคราะห์")
 
     return {
         "uploaded_file": uploaded_file,
@@ -561,7 +608,7 @@ def render_ai_simulation_controls() -> dict:
         "start_year": start_year,
         "predict_years": predict_years,
         "mitigation_tool": mitigation_tool,
-        "run_ai": run_ai,
+        "run_ai": st.session_state.get("ai_run_active", False),
         "water_level_rise": water_level_rise,
         "flood_distance_m": flood_distance_m,
         "flood_max_slope": flood_max_slope,
