@@ -91,7 +91,7 @@ def render_sidebar() -> dict:
         # General Plan Mode
         # -------------------------------------------------
         if selected_mode == "General Plan":
-            st.markdown("### 🥞 Data Layers (ชั้นข้อมูล)")
+            st.markdown("### 🥞 Data Layers")
 
             basemap_choice = render_basemap_selector(
                 key="general_basemap",
@@ -104,6 +104,8 @@ def render_sidebar() -> dict:
         # AI Simulation Mode
         # -------------------------------------------------
         elif selected_mode == "AI Simulation":
+            st.markdown("### 🤖 AI Simulation")
+
             basemap_choice = render_basemap_selector(
                 key="ai_basemap",
                 default="Esri Satellite",
@@ -115,6 +117,8 @@ def render_sidebar() -> dict:
         # Suitability Analysis Mode
         # -------------------------------------------------
         elif selected_mode == "Suitability Analysis":
+            st.markdown("### 🧭 Suitability Analysis")
+
             basemap_choice = render_basemap_selector(
                 key="suitability_basemap",
                 default="Esri Satellite",
@@ -138,6 +142,9 @@ def render_sidebar() -> dict:
     }
 
 
+# ---------------------------------------------------------
+# Area selector
+# ---------------------------------------------------------
 def render_area_selector():
     """
     แสดงตัวเลือกพื้นที่วิเคราะห์ จังหวัด/อำเภอ
@@ -213,6 +220,9 @@ def render_area_selector():
     return selected_province, selected_district, roi, is_whole_country
 
 
+# ---------------------------------------------------------
+# Basemap selector
+# ---------------------------------------------------------
 def render_basemap_selector(key: str, default: str = "OpenStreetMap") -> str:
     """
     Basemap selector ที่ใช้ชื่อ basemap ซึ่งรองรับจริงใน map_renderer.py
@@ -224,13 +234,16 @@ def render_basemap_selector(key: str, default: str = "OpenStreetMap") -> str:
         default_index = 0
 
     return st.selectbox(
-        "🗺️ Basemap (แผนที่ฐาน)",
+        "🗺️ Basemap",
         BASEMAP_OPTIONS,
         index=default_index,
         key=key,
     )
 
 
+# ---------------------------------------------------------
+# General Plan controls
+# ---------------------------------------------------------
 def render_general_plan_controls() -> dict:
     """
     Sidebar controls สำหรับโหมด General Plan
@@ -238,7 +251,7 @@ def render_general_plan_controls() -> dict:
 
     settings = {}
 
-    st.markdown("**🌍 ข้อมูลภูมิประเทศ & แหล่งน้ำ**")
+    st.markdown("**🌍 ภูมิประเทศ / แหล่งน้ำ / ภัยพิบัติ**")
 
     settings["show_cop_dem"] = st.checkbox(
         "⛰️ Copernicus DEM",
@@ -259,7 +272,7 @@ def render_general_plan_controls() -> dict:
     )
 
     settings["show_dswx_s1"] = st.checkbox(
-        "💧 DSWx-S1 (แหล่งน้ำ Radar)",
+        "💧 DSWx-S1 แหล่งน้ำ Radar",
         value=False,
         key="show_dswx_s1",
     )
@@ -294,7 +307,7 @@ def render_general_plan_controls() -> dict:
         else 0.7
     )
 
-    st.markdown("**🌱 ข้อมูลการใช้ที่ดิน & อากาศ**")
+    st.markdown("**🌱 การใช้ที่ดิน / สิ่งแวดล้อม / อากาศ**")
 
     settings["show_landcover"] = st.checkbox(
         "🟢 ESA Land Cover",
@@ -303,7 +316,7 @@ def render_general_plan_controls() -> dict:
     )
     settings["op_landcover"] = (
         st.slider(
-            "ความโปร่งแสง ESA",
+            "ความโปร่งแสง ESA Land Cover",
             0.0,
             1.0,
             0.7,
@@ -350,10 +363,10 @@ def render_general_plan_controls() -> dict:
         else 0.7
     )
 
-    st.markdown("**🏙️ ข้อมูลความเป็นเมือง & ประชากร**")
+    st.markdown("**🏙️ เมือง / ประชากร**")
 
     settings["show_urban"] = st.checkbox(
-        "🏢 GHSL: Degree of Urbanization",
+        "🏢 GHSL Degree of Urbanization",
         value=False,
         key="show_urban",
     )
@@ -371,7 +384,7 @@ def render_general_plan_controls() -> dict:
     )
 
     settings["show_pop"] = st.checkbox(
-        "👥 GHSL: Global Population",
+        "👥 GHSL Global Population",
         value=False,
         key="show_pop",
     )
@@ -391,9 +404,16 @@ def render_general_plan_controls() -> dict:
     return settings
 
 
+# ---------------------------------------------------------
+# AI Simulation controls
+# ---------------------------------------------------------
 def render_ai_simulation_controls() -> dict:
     """
     Sidebar controls สำหรับโหมด AI Simulation
+
+    รองรับ:
+    1. Urban Growth Tracking
+    2. Flood Risk Simulation
     """
 
     st.markdown("### 🏢 1. Import Data")
@@ -404,6 +424,11 @@ def render_ai_simulation_controls() -> dict:
         key="ai_upload_file",
     )
 
+    st.caption(
+        "หมายเหตุ: เวอร์ชันนี้ยังใช้ ROI จากจังหวัด/อำเภอเป็นหลัก "
+        "ส่วนไฟล์อัปโหลดเตรียมไว้สำหรับพัฒนาขั้นต่อไป"
+    )
+
     st.markdown("### 🔍 2. Spatial Analysis")
 
     analysis_type = st.selectbox(
@@ -412,34 +437,118 @@ def render_ai_simulation_controls() -> dict:
         key="ai_analysis_type",
     )
 
-    start_year = None
+    # ค่า default ต้องมีเสมอ เพื่อให้ return dict ไม่ขาด key
+    start_year = 2015
+    predict_years = 10
+    mitigation_tool = None
 
+    water_level_rise = 2.0
+    flood_distance_m = 3000
+    flood_max_slope = 10.0
+
+    # -----------------------------------------------------
+    # Urban Growth Tracking
+    # -----------------------------------------------------
     if analysis_type == "Urban Growth Tracking":
+        st.markdown("### 📈 3. Urban Growth Parameters")
+
         start_year = st.slider(
             "เลือกปีเริ่มต้นอดีต",
             min_value=2014,
             max_value=2021,
             value=2015,
+            step=1,
             key="ai_start_year",
         )
 
-    st.markdown("### 📈 3. Predictive Modeling")
+        predict_years = st.slider(
+            "Forecast Timeline",
+            min_value=1,
+            max_value=30,
+            value=10,
+            step=1,
+            key="ai_predict_years",
+        )
 
-    predict_years = st.slider(
-        "Forecast Timeline",
-        1,
-        30,
-        10,
-        key="ai_predict_years",
-    )
+        st.markdown("### 🛡️ 4. Planning Mitigation")
 
-    st.markdown("### 🛡️ 4. Engineering Mitigation")
+        mitigation_tool = st.radio(
+            "Simulation Tools",
+            ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"],
+            key="ai_mitigation_tool",
+        )
 
-    mitigation_tool = st.radio(
-        "Simulation Tools",
-        ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"],
-        key="ai_mitigation_tool",
-    )
+        with st.expander("ℹ️ คำอธิบาย Urban Growth Tracking", expanded=False):
+            st.markdown(
+                """
+                โมเดลนี้ใช้ดัชนี **NDBI จาก Landsat 8** เพื่อประเมินการเพิ่มขึ้นของพื้นที่สิ่งปลูกสร้างย้อนหลัง
+                แล้วสร้างเส้นแนวโน้มเพื่อคาดการณ์การขยายตัวในอนาคต
+
+                **ข้อจำกัด**
+                - NDBI อาจสับสนกับพื้นที่ดินโล่งหรือพื้นผิวสะท้อนแสงสูง
+                - ผลลัพธ์เหมาะสำหรับการดูแนวโน้มเบื้องต้น ไม่ใช่ขอบเขตสิ่งปลูกสร้างทางกฎหมาย
+                """
+            )
+
+    # -----------------------------------------------------
+    # Flood Risk Simulation
+    # -----------------------------------------------------
+    elif analysis_type == "Flood Risk Simulation":
+        st.markdown("### 🌊 3. Flood Simulation Parameters")
+
+        water_level_rise = st.slider(
+            "ระดับน้ำเพิ่มขึ้น / น้ำล้นตลิ่ง (เมตร)",
+            min_value=0.0,
+            max_value=10.0,
+            value=2.0,
+            step=0.5,
+            key="flood_water_level_rise",
+        )
+
+        flood_distance_m = st.slider(
+            "ระยะอิทธิพลจากแหล่งน้ำ (เมตร)",
+            min_value=500,
+            max_value=10000,
+            value=3000,
+            step=500,
+            key="flood_distance_m",
+        )
+
+        flood_max_slope = st.slider(
+            "ความลาดชันสูงสุดที่น้ำขังได้ (องศา)",
+            min_value=2.0,
+            max_value=30.0,
+            value=10.0,
+            step=1.0,
+            key="flood_max_slope",
+        )
+
+        st.markdown("### 🛡️ 4. Flood Mitigation Scenario")
+
+        mitigation_tool = st.radio(
+            "Simulation Tools",
+            ["กั้นแนวคันดิน", "จำลองฝายชะลอน้ำ", "ปรับแก้ระดับตลิ่ง"],
+            key="flood_mitigation_tool",
+        )
+
+        with st.expander("ℹ️ คำอธิบาย Flood Risk Simulation", expanded=False):
+            st.markdown(
+                """
+                โมเดลนี้ใช้แนวคิด **Modified Bathtub Model** เพื่อจำลองพื้นที่ที่มีโอกาสจมน้ำ
+                จากระดับน้ำที่เพิ่มขึ้น โดยพิจารณา 3 เงื่อนไขหลัก:
+
+                1. ความสูงภูมิประเทศต่ำกว่าระดับน้ำจำลอง  
+                2. ความลาดชันไม่สูงเกินไป  
+                3. อยู่ในระยะอิทธิพลจากแหล่งน้ำ  
+
+                พร้อมเปรียบเทียบกับประวัติน้ำท่วมจาก Global Flood Database
+
+                **ข้อจำกัด**
+                - ไม่ใช่แบบจำลองไฮดรอลิกเต็มรูปแบบ
+                - ยังไม่คำนวณปริมาณฝน ความจุลำน้ำ ระบบระบายน้ำ หรือสิ่งกีดขวางทางน้ำ
+                - เหมาะสำหรับการคัดกรองพื้นที่เสี่ยงเบื้องต้นในงานผังเมือง
+                """
+            )
 
     run_ai = st.button(
         "▶️ RUN AI ENGINE",
@@ -453,9 +562,15 @@ def render_ai_simulation_controls() -> dict:
         "predict_years": predict_years,
         "mitigation_tool": mitigation_tool,
         "run_ai": run_ai,
+        "water_level_rise": water_level_rise,
+        "flood_distance_m": flood_distance_m,
+        "flood_max_slope": flood_max_slope,
     }
 
 
+# ---------------------------------------------------------
+# Suitability controls
+# ---------------------------------------------------------
 def render_suitability_controls() -> dict:
     """
     Sidebar controls สำหรับโหมด Suitability Analysis
@@ -526,7 +641,7 @@ def render_suitability_controls() -> dict:
         st.warning("น้ำหนักรวมเป็น 0 กรุณาเพิ่มน้ำหนักอย่างน้อย 1 ปัจจัย")
     else:
         st.caption(f"น้ำหนักรวมปัจจุบัน: {total_weight:.2f}")
-        st.caption("หมายเหตุ: ระบบจะ normalize น้ำหนักให้อัตโนมัติในขั้นคำนวณ")
+        st.caption("ระบบจะ normalize น้ำหนักให้อัตโนมัติในขั้นคำนวณ")
 
     show_factor_layers = st.checkbox(
         "แสดง Factor Layers",
