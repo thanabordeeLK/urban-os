@@ -117,6 +117,7 @@ def main() -> None:
                 roi=roi,
                 weights=suitability_config.get("weights", {}),
                 show_factors=suitability_config.get("show_factor_layers", False),
+                is_whole_country=is_whole_country,
             )
         else:
             st.info(
