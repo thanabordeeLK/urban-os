@@ -238,6 +238,8 @@ def run_urban_growth_tracking(
                     position="bottomright",
                 )
 
+            st.session_state["ai_growth_trend_df"] = df_trend
+
             st.toast("จำลองการขยายตัวเมืองเสร็จสิ้น", icon="✨")
 
             return df_trend
@@ -526,9 +528,12 @@ def render_ai_result_chart(df_trend):
     """
     แสดงกราฟผลลัพธ์ AI Simulation
 
-    ตอนนี้ใช้กับ Urban Growth Tracking
-    ส่วน Flood Simulation แสดงผลผ่าน Sidebar summary และ Map layer
+    ใช้กับ Urban Growth Tracking
+    ถ้า df_trend เป็น None แต่มีข้อมูลเก่าใน session_state ให้ใช้ข้อมูลนั้น
     """
+
+    if df_trend is None:
+        df_trend = st.session_state.get("ai_growth_trend_df")
 
     if df_trend is None:
         return
