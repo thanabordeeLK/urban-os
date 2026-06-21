@@ -1,6 +1,7 @@
-import streamlit as st
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 # ---------------------------------------------------------
 # ทำให้ Streamlit Cloud และ local runner มองเห็นโมดูลภายในโปรเจกต์
@@ -54,23 +55,30 @@ def main() -> None:
     # -----------------------------------------------------
     state = render_sidebar()
 
-    selected_mode = state.get("selected_mode")
+    selected_mode = state.get("selected_mode", "General Plan")
     roi = state.get("roi")
     is_whole_country = state.get("is_whole_country", False)
-    basemap_choice = state.get("basemap_choice", "OSM")
+    basemap_choice = state.get("basemap_choice", "OpenStreetMap")
+
+    selected_province = state.get("selected_province", "")
+    selected_district = state.get("selected_district", "")
 
     # -----------------------------------------------------
     # 4. Create base map
     # -----------------------------------------------------
     Map = create_base_map(
-    basemap_choice=basemap_choice,
-    roi=roi,
-    is_whole_country=is_whole_country,
-    selected_province=state.get("selected_province", ""),
-    selected_district=state.get("selected_district", ""),
-)
+        basemap_choice=basemap_choice,
+        roi=roi,
+        is_whole_country=is_whole_country,
+        selected_province=selected_province,
+        selected_district=selected_district,
+    )
 
-    add_boundary(Map, roi, is_whole_country)
+    add_boundary(
+        Map=Map,
+        roi=roi,
+        is_whole_country=is_whole_country,
+    )
 
     # สำหรับเก็บผลลัพธ์กราฟ AI Simulation
     df_trend = None
