@@ -26,8 +26,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation"],
-            icons=["map", "cpu"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis"],
+            icons=["map", "cpu", "layers"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -38,15 +38,15 @@ def render_sidebar() -> dict:
                     "font-size": "16px",
                     "text-align": "left",
                     "margin": "0px",
-                },
-                "nav-link-selected": {
-                    "background-color": "rgba(0, 242, 254, 0.2)",
-                    "color": "#00F2FE",
-                    "border-left": "4px solid #00F2FE",
-                    "font-weight": "bold",
-                },
             },
-        )
+            "nav-link-selected": {
+            "background-color": "rgba(0, 242, 254, 0.2)",
+            "color": "#00F2FE",
+            "border-left": "4px solid #00F2FE",
+            "font-weight": "bold",
+        },
+    },
+)
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
@@ -93,19 +93,32 @@ def render_sidebar() -> dict:
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-        if selected_mode == "General Plan":
-            st.markdown("### 🥞 Data Layers (ชั้นข้อมูล)")
-            basemap_choice = st.selectbox(
-                "🗺️ Basemap (แผนที่ฐาน)",
-                ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"],
-            )
+        if selected_mode == "Suitability Analysis":
+            st.markdown("### 🧭 Suitability Weights")
+            st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
 
-            layer_settings = render_general_plan_controls()
-            ai_settings = {}
-        else:
-            basemap_choice = "SATELLITE"
-            layer_settings = {}
-            ai_settings = render_ai_simulation_controls()
+            w_slope = st.slider("Slope", 0.0, 1.0, 0.20, 0.05)
+            w_flood = st.slider("Flood Risk", 0.0, 1.0, 0.25, 0.05)
+            w_landcover = st.slider("Land Cover", 0.0, 1.0, 0.25, 0.05)
+            w_urban = st.slider("Urbanization", 0.0, 1.0, 0.20, 0.05)
+            w_water = st.slider("Water Proximity", 0.0, 1.0, 0.10, 0.05)
+
+            show_factor_layers = st.checkbox("แสดง Factor Layers", value=False)
+            run_suitability = st.button("▶️ Run Suitability Analysis")
+
+            suitability_config = {
+               "weights": {
+                   "slope": w_slope,
+                   "flood": w_flood,
+                   "landcover": w_landcover,
+                   "urban": w_urban,
+                   "water": w_water,
+               },
+               "show_factor_layers": show_factor_layers,
+               "run_suitability": run_suitability,
+        }
+    else:
+    suitability_config = None
 
     return {
         "selected_mode": selected_mode,
