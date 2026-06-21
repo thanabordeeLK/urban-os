@@ -1,12 +1,13 @@
 import streamlit as st
 import geemap.foliumap as geemap
-import ee
 import folium
 from streamlit_folium import st_folium
+from html import escape
 
 
 # ---------------------------------------------------------
 # Basemap config แบบใช้ Tile URL ตรง
+# เสถียรกว่า geemap.add_basemap บน Streamlit Cloud
 # ---------------------------------------------------------
 BASEMAPS = {
     "OpenStreetMap": {
@@ -37,6 +38,7 @@ BASEMAPS = {
 }
 
 
+# รองรับชื่อเก่าที่เคยใช้ใน sidebar
 BASEMAP_ALIASES = {
     "OSM": "OpenStreetMap",
     "ROADMAP": "OpenStreetMap",
@@ -51,7 +53,13 @@ BASEMAP_ALIASES = {
 }
 
 
+# ---------------------------------------------------------
+# Basemap utilities
+# ---------------------------------------------------------
 def resolve_basemap_name(basemap_choice: str) -> str:
+    """
+    แปลงชื่อ basemap จาก sidebar ให้เป็นชื่อที่ระบบรองรับจริง
+    """
     if not basemap_choice:
         return "OpenStreetMap"
 
@@ -59,6 +67,11 @@ def resolve_basemap_name(basemap_choice: str) -> str:
 
 
 def add_custom_basemap(Map, basemap_choice: str):
+    """
+    เพิ่ม basemap ด้วย folium.TileLayer โดยตรง
+    ไม่ใช้ geemap.add_basemap() เพื่อลดปัญหา Streamlit Cloud
+    """
+
     basemap_name = resolve_basemap_name(basemap_choice)
     basemap = BASEMAPS.get(basemap_name, BASEMAPS["OpenStreetMap"])
 
@@ -92,11 +105,16 @@ def add_custom_basemap(Map, basemap_choice: str):
     return Map
 
 
+# ---------------------------------------------------------
+# ROI utilities
+# ---------------------------------------------------------
 def get_area_key(selected_province: str, selected_district: str) -> str:
     """
     ใช้ตรวจว่าผู้ใช้เปลี่ยนพื้นที่วิเคราะห์หรือไม่
     """
-    return f"{selected_province}::{selected_district}"
+    province = selected_province or ""
+    district = selected_district or ""
+    return f"{province}::{district}"
 
 
 def get_roi_center(roi):
@@ -149,6 +167,10 @@ def get_roi_bounds(roi):
         south = min(lats)
         north = max(lats)
 
+        # กันกรณีขอบเขตเล็กผิดปกติ
+        if west == east or south == north:
+            return None
+
         return [[south, west], [north, east]]
 
     except Exception as e:
@@ -178,10 +200,7 @@ def initialize_or_update_map_view(
         lat, lon = get_roi_center(roi)
         roi_bounds = get_roi_bounds(roi)
 
-        if is_whole_country:
-            zoom = 6
-        else:
-            zoom = 10
+        zoom = 6 if is_whole_country else 10
 
         st.session_state["urban_os_area_key"] = area_key
         st.session_state["urban_os_map_center"] = [lat, lon]
@@ -199,6 +218,9 @@ def initialize_or_update_map_view(
     return center, zoom, bounds, should_fit_bounds
 
 
+# ---------------------------------------------------------
+# Map creation
+# ---------------------------------------------------------
 def create_base_map(
     basemap_choice: str = "OpenStreetMap",
     roi=None,
@@ -275,6 +297,103 @@ def add_boundary(Map, roi, is_whole_country: bool = False):
     return Map
 
 
+# ---------------------------------------------------------
+# Custom legend
+# ---------------------------------------------------------
+def add_custom_legend(
+    Map,
+    title: str,
+    legend_dict: dict,
+    position: str = "bottomright",
+):
+    """
+    เพิ่ม legend แบบ HTML เอง เพื่อให้ข้อความแสดงชัดเจนบน Streamlit Cloud
+
+    Args:
+        Map: folium/geemap map object
+        title: ชื่อหัวข้อ legend
+        legend_dict: {"ชื่อรายการ": "รหัสสี hex"}
+        position: bottomright, bottomleft, topright, topleft
+    """
+
+    if not legend_dict:
+        return Map
+
+    position_styles = {
+        "bottomright": "bottom: 28px; right: 18px;",
+        "bottomleft": "bottom: 28px; left: 18px;",
+        "topright": "top: 18px; right: 18px;",
+        "topleft": "top: 18px; left: 18px;",
+    }
+
+    pos_style = position_styles.get(position, position_styles["bottomright"])
+
+    rows = ""
+
+    for label, color in legend_dict.items():
+        safe_label = escape(str(label))
+        safe_color = str(color).replace("#", "").strip()
+
+        rows += f"""
+        <div style="display: flex; align-items: center; margin-bottom: 6px;">
+            <span style="
+                display: inline-block;
+                width: 18px;
+                height: 14px;
+                min-width: 18px;
+                margin-right: 8px;
+                background: #{safe_color};
+                border: 1px solid #444;
+            "></span>
+            <span style="
+                color: #111111;
+                font-size: 12px;
+                font-weight: 500;
+                line-height: 1.25;
+            ">{safe_label}</span>
+        </div>
+        """
+
+    legend_html = f"""
+    <div style="
+        position: fixed;
+        {pos_style}
+        z-index: 9999;
+        background-color: rgba(255, 255, 255, 0.95);
+        padding: 10px 12px;
+        border: 1px solid #999;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        max-width: 280px;
+        max-height: 360px;
+        overflow-y: auto;
+        font-family: Arial, sans-serif;
+    ">
+        <div style="
+            color: #000000;
+            font-weight: 700;
+            font-size: 13px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #dddddd;
+            padding-bottom: 4px;
+        ">
+            {escape(title)}
+        </div>
+        {rows}
+    </div>
+    """
+
+    try:
+        Map.get_root().html.add_child(folium.Element(legend_html))
+    except Exception as e:
+        st.warning(f"ไม่สามารถเพิ่มคำอธิบายสัญลักษณ์ได้: {e}")
+
+    return Map
+
+
+# ---------------------------------------------------------
+# Render map
+# ---------------------------------------------------------
 def render_map(Map, height: int = 850):
     """
     แสดงผลแผนที่หลัก และบันทึกตำแหน่ง zoom/pan ล่าสุดไว้ใน session_state
@@ -288,7 +407,12 @@ def render_map(Map, height: int = 850):
             # key เปลี่ยนเมื่อเปลี่ยนพื้นที่หรือเปลี่ยน basemap
             # แต่ไม่เปลี่ยนเมื่อเปิด/ปิด layer
             clean_basemap = basemap_choice.replace(" ", "_")
-            clean_area_key = area_key.replace(" ", "_").replace("::", "_")
+            clean_area_key = (
+                area_key.replace(" ", "_")
+                .replace("::", "_")
+                .replace("/", "_")
+                .replace("\\", "_")
+            )
 
             map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}"
 
