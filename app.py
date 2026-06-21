@@ -2,7 +2,9 @@ import streamlit as st
 import sys
 from pathlib import Path
 
-# ให้ Streamlit Cloud และ local runner มองเห็นโฟลเดอร์โมดูลภายในโปรเจกต์เสมอ
+# ---------------------------------------------------------
+# ทำให้ Streamlit Cloud และ local runner มองเห็นโมดูลภายในโปรเจกต์
+# ---------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -10,60 +12,125 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import configure_page, inject_css
 from config.auth import initialize_earth_engine
+
 from components.sidebar import render_sidebar
 from components.map_renderer import create_base_map, add_boundary, render_map
 from components.indicator_cards import render_indicator_cards
+
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
     run_ai_simulation_if_requested,
     render_ai_result_chart,
 )
+from core_engine.suitability import (
+    add_suitability_layers,
+    render_suitability_methodology,
+)
 
 
 def render_header() -> None:
-    """หัวเว็บหลัก"""
+    """แสดงหัวเว็บหลักของระบบ Urban OS"""
     st.title("🌐 Urban OS : Spatial AI Dashboard")
     st.markdown("*ระบบปฏิบัติการผังเมืองอัจฉริยะ และการจำลองสถานการณ์เชิงพื้นที่*")
 
 
 def main() -> None:
+    """Main entry point ของ Streamlit App"""
+
+    # -----------------------------------------------------
+    # 1. Page config / CSS / Header
+    # -----------------------------------------------------
     configure_page()
     inject_css()
     render_header()
 
+    # -----------------------------------------------------
+    # 2. Initialize Google Earth Engine
+    # -----------------------------------------------------
     initialize_earth_engine()
 
+    # -----------------------------------------------------
+    # 3. Sidebar state
+    # -----------------------------------------------------
     state = render_sidebar()
 
-    selected_mode = state["selected_mode"]
-    roi = state["roi"]
-    is_whole_country = state["is_whole_country"]
-    basemap_choice = state["basemap_choice"]
+    selected_mode = state.get("selected_mode")
+    roi = state.get("roi")
+    is_whole_country = state.get("is_whole_country", False)
+    basemap_choice = state.get("basemap_choice", "OSM")
 
+    # -----------------------------------------------------
+    # 4. Create base map
+    # -----------------------------------------------------
     Map = create_base_map(basemap_choice)
     add_boundary(Map, roi, is_whole_country)
 
+    # สำหรับเก็บผลลัพธ์กราฟ AI Simulation
     df_trend = None
 
+    # -----------------------------------------------------
+    # 5. Mode: General Plan
+    # -----------------------------------------------------
     if selected_mode == "General Plan":
         add_general_plan_layers(
             Map=Map,
             roi=roi,
             is_whole_country=is_whole_country,
-            layer_settings=state["layer_settings"],
+            layer_settings=state.get("layer_settings", {}),
         )
 
+    # -----------------------------------------------------
+    # 6. Mode: AI Simulation
+    # -----------------------------------------------------
     elif selected_mode == "AI Simulation":
         df_trend = run_ai_simulation_if_requested(
             Map=Map,
             roi=roi,
             is_whole_country=is_whole_country,
-            ai_settings=state["ai_settings"],
+            ai_settings=state.get("ai_settings", {}),
         )
 
+    # -----------------------------------------------------
+    # 7. Mode: Suitability Analysis
+    # -----------------------------------------------------
+    elif selected_mode == "Suitability Analysis":
+        suitability_config = state.get("suitability_config")
+
+        if suitability_config and suitability_config.get("run_suitability"):
+            add_suitability_layers(
+                Map=Map,
+                roi=roi,
+                weights=suitability_config.get("weights", {}),
+                show_factors=suitability_config.get("show_factor_layers", False),
+            )
+        else:
+            st.info(
+                "เลือกน้ำหนักปัจจัยใน Sidebar แล้วกด ▶️ Run Suitability Analysis "
+                "เพื่อสร้างแผนที่ความเหมาะสมต่อการพัฒนาเมือง"
+            )
+
+        render_suitability_methodology()
+
+    # -----------------------------------------------------
+    # 8. Render Map
+    # -----------------------------------------------------
     render_map(Map)
-    render_indicator_cards()
-    render_ai_result_chart(df_trend)
+
+    # -----------------------------------------------------
+    # 9. Render mode-specific outputs
+    # -----------------------------------------------------
+    if selected_mode == "General Plan":
+        render_indicator_cards()
+
+    elif selected_mode == "AI Simulation":
+        render_ai_result_chart(df_trend)
+
+    elif selected_mode == "Suitability Analysis":
+        st.markdown("### 🧭 Suitability Analysis Result")
+        st.caption(
+            "แผนที่นี้เป็นแบบจำลองเบื้องต้นสำหรับประเมินพื้นที่เหมาะสมต่อการพัฒนาเมือง "
+            "โดยอ้างอิง slope, flood history, land cover, urbanization และ water proximity"
+        )
 
 
 if __name__ == "__main__":
