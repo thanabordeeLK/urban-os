@@ -7,7 +7,6 @@ from streamlit_folium import st_folium
 
 # ---------------------------------------------------------
 # Basemap config แบบใช้ Tile URL ตรง
-# เสถียรกว่า geemap.add_basemap บน Streamlit Cloud
 # ---------------------------------------------------------
 BASEMAPS = {
     "OpenStreetMap": {
@@ -53,9 +52,6 @@ BASEMAP_ALIASES = {
 
 
 def resolve_basemap_name(basemap_choice: str) -> str:
-    """
-    แปลงชื่อ basemap จาก sidebar ให้เป็นชื่อที่ระบบรองรับจริง
-    """
     if not basemap_choice:
         return "OpenStreetMap"
 
@@ -63,10 +59,6 @@ def resolve_basemap_name(basemap_choice: str) -> str:
 
 
 def add_custom_basemap(Map, basemap_choice: str):
-    """
-    เพิ่ม basemap ด้วย folium.TileLayer โดยตรง
-    """
-
     basemap_name = resolve_basemap_name(basemap_choice)
     basemap = BASEMAPS.get(basemap_name, BASEMAPS["OpenStreetMap"])
 
@@ -100,6 +92,13 @@ def add_custom_basemap(Map, basemap_choice: str):
     return Map
 
 
+def get_area_key(selected_province: str, selected_district: str) -> str:
+    """
+    ใช้ตรวจว่าผู้ใช้เปลี่ยนพื้นที่วิเคราะห์หรือไม่
+    """
+    return f"{selected_province}::{selected_district}"
+
+
 def get_roi_center(roi):
     """
     ดึง centroid ของ ROI จาก Earth Engine แล้วแปลงเป็น lat/lon
@@ -123,11 +122,38 @@ def get_roi_center(roi):
         return 15.87, 100.99
 
 
-def get_area_key(selected_province: str, selected_district: str) -> str:
+def get_roi_bounds(roi):
     """
-    สร้าง key สำหรับตรวจว่าผู้ใช้เปลี่ยนพื้นที่วิเคราะห์หรือไม่
+    ดึง bounding box ของ ROI สำหรับใช้ fit_bounds
+
+    Folium ต้องการรูปแบบ:
+    [[south, west], [north, east]]
     """
-    return f"{selected_province}::{selected_district}"
+
+    try:
+        if roi is None:
+            return None
+
+        bounds_geom = roi.geometry().bounds(maxError=100)
+        coords = bounds_geom.coordinates().getInfo()
+
+        # coords ปกติจะเป็น polygon:
+        # [[[lon, lat], [lon, lat], ...]]
+        ring = coords[0]
+
+        lons = [pt[0] for pt in ring]
+        lats = [pt[1] for pt in ring]
+
+        west = min(lons)
+        east = max(lons)
+        south = min(lats)
+        north = max(lats)
+
+        return [[south, west], [north, east]]
+
+    except Exception as e:
+        st.warning(f"ไม่สามารถคำนวณขอบเขตพื้นที่ได้: {e}")
+        return None
 
 
 def initialize_or_update_map_view(
@@ -137,21 +163,20 @@ def initialize_or_update_map_view(
     selected_district: str,
 ):
     """
-    จัดการ center/zoom ของแผนที่
+    จัดการ center/zoom/bounds ของแผนที่
 
     หลักการ:
-    - ถ้าเปลี่ยนจังหวัด/อำเภอ → center ไปพื้นที่ใหม่
-    - ถ้าแค่เปิด/ปิด layer → ใช้ center/zoom ล่าสุด ไม่เด้งกลับ
+    - ถ้าเปลี่ยนจังหวัด/อำเภอ → fit bounds ให้ขอบเขตเต็มจอ
+    - ถ้าแค่เปิด/ปิด layer → ใช้ตำแหน่งล่าสุด ไม่เด้งกลับ
     """
 
     area_key = get_area_key(selected_province, selected_district)
-
     previous_area_key = st.session_state.get("urban_os_area_key")
-
     area_changed = previous_area_key != area_key
 
     if area_changed or "urban_os_map_center" not in st.session_state:
         lat, lon = get_roi_center(roi)
+        roi_bounds = get_roi_bounds(roi)
 
         if is_whole_country:
             zoom = 6
@@ -161,11 +186,17 @@ def initialize_or_update_map_view(
         st.session_state["urban_os_area_key"] = area_key
         st.session_state["urban_os_map_center"] = [lat, lon]
         st.session_state["urban_os_map_zoom"] = zoom
+        st.session_state["urban_os_roi_bounds"] = roi_bounds
+        st.session_state["urban_os_should_fit_bounds"] = True
+    else:
+        st.session_state["urban_os_should_fit_bounds"] = False
 
     center = st.session_state.get("urban_os_map_center", [15.87, 100.99])
     zoom = st.session_state.get("urban_os_map_zoom", 6)
+    bounds = st.session_state.get("urban_os_roi_bounds")
+    should_fit_bounds = st.session_state.get("urban_os_should_fit_bounds", False)
 
-    return center, zoom
+    return center, zoom, bounds, should_fit_bounds
 
 
 def create_base_map(
@@ -176,14 +207,14 @@ def create_base_map(
     selected_district: str = "",
 ):
     """
-    สร้างแผนที่ฐานแบบเสถียรสำหรับ Streamlit Cloud
+    สร้างแผนที่ฐาน
 
     จุดสำคัญ:
-    - ใช้ session_state เก็บ center/zoom
-    - ไม่ reset viewport ทุกครั้งที่เปิดปิด layer
+    - ถ้าเปลี่ยนพื้นที่ จะ fit bounds
+    - ถ้าเปิด/ปิด layer จะรักษา viewport เดิม
     """
 
-    center, zoom = initialize_or_update_map_view(
+    center, zoom, bounds, should_fit_bounds = initialize_or_update_map_view(
         roi=roi,
         is_whole_country=is_whole_country,
         selected_province=selected_province,
@@ -199,7 +230,15 @@ def create_base_map(
 
     add_custom_basemap(Map, basemap_choice)
 
+    # fit ขอบเขตพื้นที่ให้เต็มจอ เฉพาะตอนเปลี่ยนพื้นที่เท่านั้น
+    if should_fit_bounds and bounds is not None:
+        try:
+            Map.fit_bounds(bounds)
+        except Exception:
+            pass
+
     Map.basemap_choice = resolve_basemap_name(basemap_choice)
+    Map.area_key = get_area_key(selected_province, selected_district)
 
     return Map
 
@@ -208,10 +247,8 @@ def add_boundary(Map, roi, is_whole_country: bool = False):
     """
     เพิ่มขอบเขตพื้นที่วิเคราะห์
 
-    หมายเหตุ:
-    - ไม่สั่ง center/zoom ที่นี่แล้ว
-    - เพราะ center/zoom ถูกจัดการใน create_base_map()
-    - เพื่อป้องกันการเด้งกลับเวลาเปิดปิด layer
+    ไม่สั่ง center/zoom ที่นี่
+    เพราะ create_base_map() จัดการ fit bounds แล้ว
     """
 
     try:
@@ -246,10 +283,14 @@ def render_map(Map, height: int = 850):
     with st.spinner("กำลังเรนเดอร์แผนที่..."):
         try:
             basemap_choice = getattr(Map, "basemap_choice", "OpenStreetMap")
+            area_key = getattr(Map, "area_key", "default_area")
 
-            # key ไม่ควรเปลี่ยนตาม layer checkbox
-            # แต่เปลี่ยนตาม basemap เพื่อให้ basemap refresh ได้จริง
-            map_key = f"urban_os_map_{basemap_choice.replace(' ', '_')}"
+            # key เปลี่ยนเมื่อเปลี่ยนพื้นที่หรือเปลี่ยน basemap
+            # แต่ไม่เปลี่ยนเมื่อเปิด/ปิด layer
+            clean_basemap = basemap_choice.replace(" ", "_")
+            clean_area_key = area_key.replace(" ", "_").replace("::", "_")
+
+            map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}"
 
             map_data = st_folium(
                 Map,
