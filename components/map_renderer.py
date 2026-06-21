@@ -38,7 +38,6 @@ BASEMAPS = {
 }
 
 
-# เผื่อ sidebar หรือไฟล์เก่ายังส่งชื่อแบบเดิมมา
 BASEMAP_ALIASES = {
     "OSM": "OpenStreetMap",
     "ROADMAP": "OpenStreetMap",
@@ -57,7 +56,6 @@ def resolve_basemap_name(basemap_choice: str) -> str:
     """
     แปลงชื่อ basemap จาก sidebar ให้เป็นชื่อที่ระบบรองรับจริง
     """
-
     if not basemap_choice:
         return "OpenStreetMap"
 
@@ -67,7 +65,6 @@ def resolve_basemap_name(basemap_choice: str) -> str:
 def add_custom_basemap(Map, basemap_choice: str):
     """
     เพิ่ม basemap ด้วย folium.TileLayer โดยตรง
-    ไม่ใช้ geemap.add_basemap() เพื่อลดปัญหา Streamlit Cloud ไม่เปลี่ยนแผนที่ฐาน
     """
 
     basemap_name = resolve_basemap_name(basemap_choice)
@@ -103,30 +100,6 @@ def add_custom_basemap(Map, basemap_choice: str):
     return Map
 
 
-def create_base_map(basemap_choice: str = "OpenStreetMap"):
-    """
-    สร้างแผนที่ฐานแบบเสถียรสำหรับ Streamlit Cloud
-
-    จุดสำคัญ:
-    - ใช้ geemap.Map เพื่อให้ addLayer ของ Earth Engine ยังทำงานได้
-    - แต่ basemap ใช้ folium.TileLayer ตรง เพื่อให้เปลี่ยน basemap ได้จริง
-    """
-
-    Map = geemap.Map(
-        location=[15.87, 100.99],
-        zoom_start=6,
-        ee_initialize=False,
-        tiles=None,
-    )
-
-    add_custom_basemap(Map, basemap_choice)
-
-    # เก็บชื่อ basemap ไว้ใช้ทำ key ตอน render
-    Map.basemap_choice = resolve_basemap_name(basemap_choice)
-
-    return Map
-
-
 def get_roi_center(roi):
     """
     ดึง centroid ของ ROI จาก Earth Engine แล้วแปลงเป็น lat/lon
@@ -150,31 +123,101 @@ def get_roi_center(roi):
         return 15.87, 100.99
 
 
+def get_area_key(selected_province: str, selected_district: str) -> str:
+    """
+    สร้าง key สำหรับตรวจว่าผู้ใช้เปลี่ยนพื้นที่วิเคราะห์หรือไม่
+    """
+    return f"{selected_province}::{selected_district}"
+
+
+def initialize_or_update_map_view(
+    roi,
+    is_whole_country: bool,
+    selected_province: str,
+    selected_district: str,
+):
+    """
+    จัดการ center/zoom ของแผนที่
+
+    หลักการ:
+    - ถ้าเปลี่ยนจังหวัด/อำเภอ → center ไปพื้นที่ใหม่
+    - ถ้าแค่เปิด/ปิด layer → ใช้ center/zoom ล่าสุด ไม่เด้งกลับ
+    """
+
+    area_key = get_area_key(selected_province, selected_district)
+
+    previous_area_key = st.session_state.get("urban_os_area_key")
+
+    area_changed = previous_area_key != area_key
+
+    if area_changed or "urban_os_map_center" not in st.session_state:
+        lat, lon = get_roi_center(roi)
+
+        if is_whole_country:
+            zoom = 6
+        else:
+            zoom = 10
+
+        st.session_state["urban_os_area_key"] = area_key
+        st.session_state["urban_os_map_center"] = [lat, lon]
+        st.session_state["urban_os_map_zoom"] = zoom
+
+    center = st.session_state.get("urban_os_map_center", [15.87, 100.99])
+    zoom = st.session_state.get("urban_os_map_zoom", 6)
+
+    return center, zoom
+
+
+def create_base_map(
+    basemap_choice: str = "OpenStreetMap",
+    roi=None,
+    is_whole_country: bool = False,
+    selected_province: str = "",
+    selected_district: str = "",
+):
+    """
+    สร้างแผนที่ฐานแบบเสถียรสำหรับ Streamlit Cloud
+
+    จุดสำคัญ:
+    - ใช้ session_state เก็บ center/zoom
+    - ไม่ reset viewport ทุกครั้งที่เปิดปิด layer
+    """
+
+    center, zoom = initialize_or_update_map_view(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        selected_province=selected_province,
+        selected_district=selected_district,
+    )
+
+    Map = geemap.Map(
+        location=center,
+        zoom_start=zoom,
+        ee_initialize=False,
+        tiles=None,
+    )
+
+    add_custom_basemap(Map, basemap_choice)
+
+    Map.basemap_choice = resolve_basemap_name(basemap_choice)
+
+    return Map
+
+
 def add_boundary(Map, roi, is_whole_country: bool = False):
     """
-    เพิ่มขอบเขตพื้นที่วิเคราะห์ และสั่ง zoom/center ไปยังพื้นที่นั้น
+    เพิ่มขอบเขตพื้นที่วิเคราะห์
+
+    หมายเหตุ:
+    - ไม่สั่ง center/zoom ที่นี่แล้ว
+    - เพราะ center/zoom ถูกจัดการใน create_base_map()
+    - เพื่อป้องกันการเด้งกลับเวลาเปิดปิด layer
     """
 
     try:
         if roi is None:
             st.warning("ไม่พบ ROI สำหรับพื้นที่ที่เลือก")
             return Map
-
-        lat, lon = get_roi_center(roi)
-
-        if is_whole_country:
-            zoom_level = 6
-        else:
-            zoom_level = 10
-
-        # ใช้ location/zoom_start ของ folium โดยตรง
-        Map.location = [lat, lon]
-        Map.options["zoom"] = zoom_level
-
-        try:
-            Map.setCenter(lon, lat, zoom_level)
-        except Exception:
-            pass
 
         if not is_whole_country:
             boundary_style = roi.style(
@@ -197,23 +240,37 @@ def add_boundary(Map, roi, is_whole_country: bool = False):
 
 def render_map(Map, height: int = 850):
     """
-    แสดงผลแผนที่หลัก
-
-    ใช้ key ที่เปลี่ยนตาม basemap เพื่อบังคับให้ Streamlit/Folium render ใหม่จริง
+    แสดงผลแผนที่หลัก และบันทึกตำแหน่ง zoom/pan ล่าสุดไว้ใน session_state
     """
 
     with st.spinner("กำลังเรนเดอร์แผนที่..."):
         try:
             basemap_choice = getattr(Map, "basemap_choice", "OpenStreetMap")
+
+            # key ไม่ควรเปลี่ยนตาม layer checkbox
+            # แต่เปลี่ยนตาม basemap เพื่อให้ basemap refresh ได้จริง
             map_key = f"urban_os_map_{basemap_choice.replace(' ', '_')}"
 
-            st_folium(
+            map_data = st_folium(
                 Map,
                 height=height,
                 use_container_width=True,
-                returned_objects=[],
+                returned_objects=["center", "zoom"],
                 key=map_key,
             )
+
+            if map_data:
+                center = map_data.get("center")
+                zoom = map_data.get("zoom")
+
+                if center and "lat" in center and "lng" in center:
+                    st.session_state["urban_os_map_center"] = [
+                        center["lat"],
+                        center["lng"],
+                    ]
+
+                if zoom is not None:
+                    st.session_state["urban_os_map_zoom"] = zoom
 
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการโหลดแผนที่: {e}")
