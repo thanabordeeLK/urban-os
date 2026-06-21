@@ -14,10 +14,8 @@ from services.roi_service import get_provinces, get_districts, get_roi
 def render_sidebar() -> dict:
     """
     แสดง UI ด้านซ้ายทั้งหมด และคืนค่าการตั้งค่าที่ผู้ใช้เลือก
-
-    Returns:
-        dict: ค่าที่ใช้ใน app.py และ core_engine
     """
+
     with st.sidebar:
         st.markdown(
             "<h3 style='text-align: center; margin-bottom: 20px;'>⚙️ CONTROL PANEL</h3>",
@@ -31,27 +29,34 @@ def render_sidebar() -> dict:
             menu_icon="cast",
             default_index=0,
             styles={
-                "container": {"padding": "0!important", "background-color": "#0B132B"},
-                "icon": {"color": "#00F2FE", "font-size": "18px"},
+                "container": {
+                    "padding": "0!important",
+                    "background-color": "#0B132B",
+                },
+                "icon": {
+                    "color": "#00F2FE",
+                    "font-size": "18px",
+                },
                 "nav-link": {
                     "color": "#E2E8F0",
                     "font-size": "16px",
                     "text-align": "left",
                     "margin": "0px",
+                },
+                "nav-link-selected": {
+                    "background-color": "rgba(0, 242, 254, 0.2)",
+                    "color": "#00F2FE",
+                    "border-left": "4px solid #00F2FE",
+                    "font-weight": "bold",
+                },
             },
-            "nav-link-selected": {
-            "background-color": "rgba(0, 242, 254, 0.2)",
-            "color": "#00F2FE",
-            "border-left": "4px solid #00F2FE",
-            "font-weight": "bold",
-        },
-    },
-)
+        )
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
         st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
 
         provinces_list = [THAILAND_ALL_LABEL] + get_provinces()
+
         default_prov_idx = (
             provinces_list.index(DEFAULT_PROVINCE)
             if DEFAULT_PROVINCE in provinces_list
@@ -93,32 +98,28 @@ def render_sidebar() -> dict:
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-        if selected_mode == "Suitability Analysis":
-            st.markdown("### 🧭 Suitability Weights")
-            st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
+        layer_settings = {}
+        ai_settings = {}
+        suitability_config = None
 
-            w_slope = st.slider("Slope", 0.0, 1.0, 0.20, 0.05)
-            w_flood = st.slider("Flood Risk", 0.0, 1.0, 0.25, 0.05)
-            w_landcover = st.slider("Land Cover", 0.0, 1.0, 0.25, 0.05)
-            w_urban = st.slider("Urbanization", 0.0, 1.0, 0.20, 0.05)
-            w_water = st.slider("Water Proximity", 0.0, 1.0, 0.10, 0.05)
+        if selected_mode == "General Plan":
+            st.markdown("### 🥞 Data Layers (ชั้นข้อมูล)")
+            basemap_choice = st.selectbox(
+                "🗺️ Basemap (แผนที่ฐาน)",
+                ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"],
+            )
+            layer_settings = render_general_plan_controls()
 
-            show_factor_layers = st.checkbox("แสดง Factor Layers", value=False)
-            run_suitability = st.button("▶️ Run Suitability Analysis")
+        elif selected_mode == "AI Simulation":
+            basemap_choice = "SATELLITE"
+            ai_settings = render_ai_simulation_controls()
 
-            suitability_config = {
-               "weights": {
-                   "slope": w_slope,
-                   "flood": w_flood,
-                   "landcover": w_landcover,
-                   "urban": w_urban,
-                   "water": w_water,
-               },
-               "show_factor_layers": show_factor_layers,
-               "run_suitability": run_suitability,
-        }
-    else:
-    suitability_config = None
+        elif selected_mode == "Suitability Analysis":
+            basemap_choice = st.selectbox(
+                "🗺️ Basemap (แผนที่ฐาน)",
+                ["HYBRID", "SATELLITE", "ROADMAP", "TERRAIN", "OSM"],
+            )
+            suitability_config = render_suitability_controls()
 
     return {
         "selected_mode": selected_mode,
@@ -129,14 +130,17 @@ def render_sidebar() -> dict:
         "basemap_choice": basemap_choice,
         "layer_settings": layer_settings,
         "ai_settings": ai_settings,
+        "suitability_config": suitability_config,
     }
 
 
 def render_general_plan_controls() -> dict:
     """Sidebar controls สำหรับโหมด General Plan"""
+
     settings = {}
 
     st.markdown("**🌍 ข้อมูลภูมิประเทศ & แหล่งน้ำ**")
+
     settings["show_cop_dem"] = st.checkbox("⛰️ Copernicus DEM", value=False)
     settings["op_cop_dem"] = (
         st.slider("ความโปร่งแสง DEM", 0.0, 1.0, 0.7)
@@ -159,6 +163,7 @@ def render_general_plan_controls() -> dict:
     )
 
     st.markdown("**🌱 ข้อมูลการใช้ที่ดิน & อากาศ**")
+
     settings["show_landcover"] = st.checkbox("🟢 ESA Land Cover", value=False)
     settings["op_landcover"] = (
         st.slider("ความโปร่งแสง ESA", 0.0, 1.0, 0.7)
@@ -181,6 +186,7 @@ def render_general_plan_controls() -> dict:
     )
 
     st.markdown("**🏙️ ข้อมูลความเป็นเมือง & ประชากร**")
+
     settings["show_urban"] = st.checkbox("🏢 GHSL: Degree of Urbanization", value=False)
     settings["op_urban"] = (
         st.slider("ความโปร่งแสง ความเป็นเมือง", 0.0, 1.0, 0.7)
@@ -200,6 +206,7 @@ def render_general_plan_controls() -> dict:
 
 def render_ai_simulation_controls() -> dict:
     """Sidebar controls สำหรับโหมด AI Simulation"""
+
     st.markdown("### 🏢 1. Import Data")
     uploaded_file = st.file_uploader("Upload Shapefile / KML", type=["zip", "kml"])
 
@@ -210,6 +217,7 @@ def render_ai_simulation_controls() -> dict:
     )
 
     start_year = None
+
     if analysis_type == "Urban Growth Tracking":
         start_year = st.slider(
             "เลือกปีเริ่มต้นอดีต",
@@ -236,4 +244,35 @@ def render_ai_simulation_controls() -> dict:
         "predict_years": predict_years,
         "mitigation_tool": mitigation_tool,
         "run_ai": run_ai,
+    }
+
+
+def render_suitability_controls() -> dict:
+    """Sidebar controls สำหรับโหมด Suitability Analysis"""
+
+    st.markdown("### 🧭 Suitability Analysis")
+    st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
+
+    w_slope = st.slider("Slope", 0.0, 1.0, 0.20, 0.05)
+    w_flood = st.slider("Flood Risk", 0.0, 1.0, 0.25, 0.05)
+    w_landcover = st.slider("Land Cover", 0.0, 1.0, 0.25, 0.05)
+    w_urban = st.slider("Urbanization", 0.0, 1.0, 0.20, 0.05)
+    w_water = st.slider("Water Proximity", 0.0, 1.0, 0.10, 0.05)
+
+    total_weight = w_slope + w_flood + w_landcover + w_urban + w_water
+    st.caption(f"น้ำหนักรวมปัจจุบัน: {total_weight:.2f}")
+
+    show_factor_layers = st.checkbox("แสดง Factor Layers", value=False)
+    run_suitability = st.button("▶️ Run Suitability Analysis")
+
+    return {
+        "weights": {
+            "slope": w_slope,
+            "flood": w_flood,
+            "landcover": w_landcover,
+            "urban": w_urban,
+            "water": w_water,
+        },
+        "show_factor_layers": show_factor_layers,
+        "run_suitability": run_suitability,
     }
