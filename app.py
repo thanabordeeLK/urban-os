@@ -62,13 +62,13 @@ def main() -> None:
     # -----------------------------------------------------
     # 4. Create base map
     # -----------------------------------------------------
-    Map = create_base_map(
+Map = create_base_map(
     basemap_choice=basemap_choice,
     roi=roi,
     is_whole_country=is_whole_country,
     selected_province=state.get("selected_province", ""),
     selected_district=state.get("selected_district", ""),
-    )
+)
 
 add_boundary(Map, roi, is_whole_country)
 
