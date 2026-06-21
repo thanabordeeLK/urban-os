@@ -1,4 +1,12 @@
 import streamlit as st
+import sys
+from pathlib import Path
+
+# ให้ Streamlit Cloud และ local runner มองเห็นโฟลเดอร์โมดูลภายในโปรเจกต์เสมอ
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 from config.settings import configure_page, inject_css
 from config.auth import initialize_earth_engine
