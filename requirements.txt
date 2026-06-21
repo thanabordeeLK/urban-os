@@ -1,7 +1,10 @@
-streamlit
-earthengine-api
-geemap
-folium
-streamlit-folium
-streamlit-option-menu
-pandas
+streamlit==1.32.2
+earthengine-api==0.1.395
+geemap==0.32.1
+folium==0.16.0
+streamlit-folium==0.18.0
+streamlit-option-menu==0.3.12
+pandas==2.2.2
+numpy==1.26.4
+python-box==7.1.1
+xyzservices==2023.10.1
