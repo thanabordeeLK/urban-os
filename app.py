@@ -27,6 +27,11 @@ from core_engine.suitability import (
     add_suitability_layers,
     render_suitability_methodology,
 )
+from core_engine.multi_agent import (
+    add_multi_agent_evidence_layers,
+    run_multi_agent_if_requested,
+    render_multi_agent_outputs,
+)
 
 
 def render_header() -> None:
@@ -128,7 +133,18 @@ def main() -> None:
         render_suitability_methodology()
 
     # -----------------------------------------------------
-    # 8. Render Map
+    # 8. Mode: Multi-Agent
+    # -----------------------------------------------------
+    elif selected_mode == "Multi-Agent":
+        add_multi_agent_evidence_layers(
+            Map=Map,
+            roi=roi,
+            is_whole_country=is_whole_country,
+            settings=state.get("multi_agent_settings", {}) or {},
+        )
+
+    # -----------------------------------------------------
+    # 9. Render Map
     # -----------------------------------------------------
     render_map(Map)
 
@@ -147,6 +163,16 @@ def main() -> None:
             "แผนที่นี้เป็นแบบจำลองเบื้องต้นสำหรับประเมินพื้นที่เหมาะสมต่อการพัฒนาเมือง "
             "โดยอ้างอิง slope, flood history, land cover, urbanization และ water proximity"
         )
+
+    elif selected_mode == "Multi-Agent":
+        outputs = run_multi_agent_if_requested(
+            roi=roi,
+            is_whole_country=is_whole_country,
+            selected_province=selected_province,
+            selected_district=selected_district,
+            multi_agent_settings=state.get("multi_agent_settings", {}) or {},
+        )
+        render_multi_agent_outputs(outputs)
 
 
 if __name__ == "__main__":

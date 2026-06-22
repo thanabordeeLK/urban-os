@@ -98,3 +98,35 @@ earthengine authenticate
 ```
 
 ถ้าขึ้น Streamlit Cloud สามารถใช้ `st.secrets["EARTHENGINE_TOKEN"]` ตาม logic ใน `config/auth.py`
+
+
+---
+
+## Multi-Agent Mode
+
+โหมดนี้เพิ่ม workflow แบบ Smart City CEO:
+
+```text
+Streamlit UI
+  -> Coordinator Agent
+      -> GIS Agent (Google Earth Engine evidence)
+      -> Urban / Traffic / Economic / Environment Agents
+      -> Gemini Vision Agent
+      -> GPT Planning Agent
+      -> Report Agent
+  -> Streamlit Result + JSON Export
+```
+
+### Secrets ที่ต้องตั้งเพิ่ม
+
+```toml
+OPENAI_API_KEY = "sk-..."
+OPENAI_MODEL = "gpt-4.1-mini"
+
+GEMINI_API_KEY = "..."
+GEMINI_MODEL = "gemini-2.5-flash"
+
+GEE_PROJECT_ID = "your-google-cloud-project-id"
+```
+
+หลักการออกแบบ: GIS Agent ต้องคำนวณหลักฐานจาก GEE ก่อน แล้วจึงส่งให้ LLM วิเคราะห์ เพื่อกัน AI เดาแผนที่เองแบบมั่นใจเกินเหตุ
