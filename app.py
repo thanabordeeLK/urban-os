@@ -121,6 +121,7 @@ def main() -> None:
             weights = suitability_config.get("weights", {})
             show_factors = suitability_config.get("show_factor_layers", False)
             constraint_config = suitability_config.get("constraint_config", {})
+            road_config = suitability_config.get("road_config", {})
             config_signature = json.dumps(
                 {
                     "province": selected_province,
@@ -129,6 +130,7 @@ def main() -> None:
                     "weights": weights,
                     "show_factors": show_factors,
                     "constraint_config": constraint_config,
+                    "road_config": road_config,
                 },
                 sort_keys=True,
                 ensure_ascii=False,
@@ -150,6 +152,7 @@ def main() -> None:
                 is_whole_country=is_whole_country,
                 calculate_stats=calculate_stats,
                 constraint_config=constraint_config,
+                road_config=road_config,
             )
         else:
             st.info(
@@ -188,7 +191,7 @@ def main() -> None:
         st.markdown("### 🧭 Suitability Analysis Result")
         st.caption(
             "แผนที่นี้เป็นแบบจำลองเบื้องต้นสำหรับประเมินพื้นที่เหมาะสมต่อการพัฒนาเมือง "
-            "โดยอ้างอิง slope, flood history, land cover, urbanization, water proximity "
+            "โดยอ้างอิง slope, flood history, land cover, urbanization, road accessibility, water proximity "
             "และพื้นที่กันออก เช่น ป่า/พื้นที่คุ้มครอง"
         )
 

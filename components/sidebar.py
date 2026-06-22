@@ -655,6 +655,7 @@ def render_suitability_controls() -> dict:
             - **Flood Risk**: พื้นที่เคยน้ำท่วมบ่อยจะถูกลดคะแนน
             - **Land Cover**: พื้นที่โล่ง/พุ่มไม้เหมาะกว่า ป่า น้ำ และเมืองเดิม
             - **Urbanization**: พื้นที่ชานเมืองได้คะแนนสูง เพราะใกล้โครงสร้างพื้นฐาน
+            - **Road Accessibility**: ใกล้ถนนในระยะเหมาะสมจะได้คะแนนสูง ไกลถนนมากจะลดคะแนน
             - **Water Proximity**: ใกล้น้ำในระยะเหมาะสมดี แต่ชิดลำน้ำเกินไปควรจำกัด
             - **Protected / Forest Constraint**: ป่าอนุรักษ์ ป่าสงวน หรือพื้นที่คุ้มครองถูกกันออกเป็น hard constraint
             """
@@ -691,9 +692,18 @@ def render_suitability_controls() -> dict:
         "Urbanization",
         0.0,
         1.0,
-        0.20,
+        0.15,
         0.05,
         key="suit_w_urban",
+    )
+
+    w_road = st.slider(
+        "Road Accessibility",
+        0.0,
+        1.0,
+        0.20,
+        0.05,
+        key="suit_w_road",
     )
 
     w_water = st.slider(
@@ -705,7 +715,7 @@ def render_suitability_controls() -> dict:
         key="suit_w_water",
     )
 
-    total_weight = w_slope + w_flood + w_landcover + w_urban + w_water
+    total_weight = w_slope + w_flood + w_landcover + w_urban + w_road + w_water
 
     if total_weight == 0:
         st.warning("น้ำหนักรวมเป็น 0 กรุณาเพิ่มน้ำหนักอย่างน้อย 1 ปัจจัย")
@@ -718,6 +728,61 @@ def render_suitability_controls() -> dict:
         value=False,
         key="show_factor_layers",
     )
+
+
+    st.markdown("### 🛣️ Road Accessibility")
+    use_road_accessibility = st.checkbox(
+        "ใช้ชั้นข้อมูลถนนเป็นปัจจัยวิเคราะห์",
+        value=False,
+        key="suit_use_road_accessibility",
+        help="ต้องใส่ GEE Asset ID ของถนนก่อน ระบบจึงจะนำถนนเข้าคำนวณ",
+    )
+
+    road_asset_text = st.text_area(
+        "GEE Asset ID ของถนน / โครงข่ายคมนาคม",
+        value="",
+        key="suit_road_asset_ids",
+        height=90,
+        placeholder=(
+            "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
+            "projects/your-project/assets/roads_uttaradit\n"
+            "users/yourname/local_roads"
+        ),
+        help="รองรับ ee.FeatureCollection ที่เป็น line หรือ polygon ของถนนจาก Google Earth Engine Assets",
+    )
+
+    road_buffer_m = st.number_input(
+        "Buffer เส้นถนนก่อนคำนวณระยะ (เมตร)",
+        min_value=0,
+        max_value=200,
+        value=20,
+        step=5,
+        key="suit_road_buffer_m",
+        help="ช่วยให้เส้นถนน rasterize ชัดขึ้น โดยเฉพาะเส้นถนนจาก shapefile",
+    )
+
+    road_max_distance_m = st.number_input(
+        "ระยะไกลสุดที่ใช้ประเมินถนน (เมตร)",
+        min_value=1000,
+        max_value=20000,
+        value=5000,
+        step=500,
+        key="suit_road_max_distance_m",
+    )
+
+    road_asset_ids = [
+        item.strip()
+        for line in road_asset_text.splitlines()
+        for item in line.split(",")
+        if item.strip()
+    ]
+
+    if use_road_accessibility and road_asset_ids:
+        st.caption(f"เปิดใช้ Road Accessibility: {len(road_asset_ids)} ชั้นข้อมูล")
+    elif use_road_accessibility and not road_asset_ids:
+        st.warning("เปิดใช้ถนนแล้ว แต่ยังไม่ได้ใส่ Road Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
+    else:
+        st.caption("ยังไม่ใช้ Road Accessibility ในสมการ")
 
     st.markdown("### 🌲 Protected / Forest Constraints")
     use_wdpa = st.checkbox(
@@ -816,12 +881,19 @@ def render_suitability_controls() -> dict:
             "landcover": w_landcover,
             "urban": w_urban,
             "water": w_water,
+            "road": w_road,
         },
         "show_factor_layers": show_factor_layers,
         "constraint_config": {
             "use_wdpa": use_wdpa,
             "asset_ids": forest_asset_ids,
             "buffer_m": forest_buffer_m,
+        },
+        "road_config": {
+            "enabled": use_road_accessibility,
+            "asset_ids": road_asset_ids,
+            "buffer_m": road_buffer_m,
+            "max_distance_m": road_max_distance_m,
         },
         "run_suitability": st.session_state.get("suitability_run_active", False),
         "run_clicked": run_clicked,

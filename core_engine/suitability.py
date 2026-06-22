@@ -57,11 +57,12 @@ FACTOR_SCORE_LEGEND = {
 
 
 DEFAULT_WEIGHTS = {
-    "slope": 0.20,
-    "flood": 0.25,
-    "landcover": 0.25,
-    "urban": 0.20,
+    "slope": 0.15,
+    "flood": 0.20,
+    "landcover": 0.20,
+    "urban": 0.15,
     "water": 0.10,
+    "road": 0.20,
 }
 
 
@@ -146,6 +147,7 @@ def normalize_weights(weights: dict | None) -> dict:
         "landcover": float(weights.get("landcover", 0)),
         "urban": float(weights.get("urban", 0)),
         "water": float(weights.get("water", 0)),
+        "road": float(weights.get("road", 0)),
     }
 
     total = sum(clean_weights.values())
@@ -360,6 +362,103 @@ def get_water_proximity_score(
 
 
 
+
+# ---------------------------------------------------------
+# Factor 6: Road accessibility
+# ---------------------------------------------------------
+def get_road_accessibility_score(
+    roi,
+    esa_lc: ee.Image,
+    is_whole_country: bool = False,
+    road_config: dict | None = None,
+) -> tuple[ee.Image, ee.Image, ee.FeatureCollection]:
+    """
+    Road Accessibility Suitability จากชั้นข้อมูลถนนที่ผู้ใช้เพิ่มเป็น GEE Asset
+
+    แนวคิด:
+    - ใกล้ถนนหลัก/ถนนท้องถิ่นในระยะเหมาะสม = เหมาะต่อการพัฒนา
+    - ไกลถนนมาก = ต้นทุนโครงสร้างพื้นฐานสูง ไม่ควรให้คะแนนสูง
+
+    ระยะคะแนนเริ่มต้น:
+    - <= 500m   = 5
+    - <= 1,500m = 4
+    - <= 3,000m = 3
+    - <= 5,000m = 2
+    - > 5,000m  = 1
+
+    ถ้ายังไม่มี road asset ระบบจะคืนคะแนนกลาง 3 แต่ควรตั้ง weight ถนนเป็น 0
+    เพื่อไม่ให้ข้อมูลถนนหลอกโมเดล
+    """
+
+    road_config = road_config or {}
+    enabled = bool(road_config.get("enabled", False))
+    asset_ids = road_config.get("asset_ids") or []
+    buffer_m = float(road_config.get("buffer_m", 0) or 0)
+    max_distance_m = float(road_config.get("max_distance_m", 5000) or 5000)
+
+    collections = []
+
+    if enabled:
+        for asset_id in asset_ids:
+            asset_id = str(asset_id).strip()
+            if not asset_id:
+                continue
+
+            try:
+                fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
+                if buffer_m > 0:
+                    fc = fc.map(lambda f: f.buffer(buffer_m))
+                collections.append(fc)
+            except Exception:
+                # ให้ GEE จัดการ error ตอน render/evaluate แทนการทำให้ Streamlit ล้มทันที
+                pass
+
+    road_fc = _merge_feature_collections(collections)
+
+    # ไม่มี road asset: คืน score กลางกับ mask ว่าง เพื่อให้ระบบยังรันได้
+    # build_suitability_model จะตั้ง road weight เป็น 0 อัตโนมัติเมื่อไม่มี asset
+    if not enabled or not asset_ids:
+        neutral_score = ee.Image(3).rename("Road_Accessibility_Suitability").toInt()
+        empty_distance = ee.Image(max_distance_m).rename("Distance_To_Road_Meter")
+        return neutral_score, empty_distance, road_fc
+
+    # Rasterize ถนนด้วย projection ของ ESA WorldCover เพื่อให้ scale คงที่
+    road_mask = (
+        ee.Image(0)
+        .byte()
+        .paint(road_fc, 1)
+        .unmask(0)
+        .reproject(esa_lc.projection())
+        .rename("Road_Mask")
+    )
+
+    max_pixels = int(max(max_distance_m / 10, 1))
+
+    dist_to_road = (
+        road_mask
+        .fastDistanceTransform(max_pixels)
+        .sqrt()
+        .multiply(10)
+        .rename("Distance_To_Road_Meter")
+    )
+
+    dist_to_road = safe_clip(dist_to_road, roi, is_whole_country)
+
+    road_score = (
+        ee.Image(1)
+        .where(dist_to_road.lte(5000), 2)
+        .where(dist_to_road.lte(3000), 3)
+        .where(dist_to_road.lte(1500), 4)
+        .where(dist_to_road.lte(500), 5)
+        .rename("Road_Accessibility_Suitability")
+        .toInt()
+    )
+
+    road_score = safe_clip(road_score, roi, is_whole_country)
+
+    return road_score, dist_to_road, road_fc
+
+
 # ---------------------------------------------------------
 # Hard constraint: Protected / forest reserve areas
 # ---------------------------------------------------------
@@ -448,6 +547,7 @@ def build_suitability_model(
     weights: dict | None = None,
     is_whole_country: bool = False,
     constraint_config: dict | None = None,
+    road_config: dict | None = None,
 ) -> dict:
     """
     สร้าง Suitability Model หลัก
@@ -461,9 +561,21 @@ def build_suitability_model(
             landcover
             urban
             water
+            road
+            road_distance
             protected_constraint
             hard_restricted
     """
+
+    road_config = road_config or {}
+    road_asset_ids = road_config.get("asset_ids") or []
+    road_enabled = bool(road_config.get("enabled", False)) and bool(road_asset_ids)
+
+    # ถ้ายังไม่มีข้อมูลถนนจริง ให้ตัด road weight ออกจากสมการอัตโนมัติ
+    # ป้องกันไม่ให้คะแนนกลางจาก dummy road layer ไปบิดผลวิเคราะห์
+    weights = dict(weights or DEFAULT_WEIGHTS.copy())
+    if not road_enabled:
+        weights["road"] = 0
 
     weights = normalize_weights(weights)
 
@@ -472,6 +584,12 @@ def build_suitability_model(
     lc_score, esa_lc = get_landcover_score(roi, is_whole_country)
     urban_score = get_urban_score(roi, is_whole_country)
     water_score = get_water_proximity_score(roi, esa_lc, is_whole_country)
+    road_score, road_distance, road_fc = get_road_accessibility_score(
+        roi=roi,
+        esa_lc=esa_lc,
+        is_whole_country=is_whole_country,
+        road_config=road_config,
+    )
     protected_constraint, protected_fc = get_protected_area_constraint(
         roi=roi,
         is_whole_country=is_whole_country,
@@ -484,6 +602,7 @@ def build_suitability_model(
         .add(lc_score.multiply(weights["landcover"]))
         .add(urban_score.multiply(weights["urban"]))
         .add(water_score.multiply(weights["water"]))
+        .add(road_score.multiply(weights["road"]))
         .rename("Suitability_Raw_Score")
     )
 
@@ -518,6 +637,8 @@ def build_suitability_model(
     lc_score = lock_display_projection(lc_score, esa_lc, is_whole_country)
     urban_score = lock_display_projection(urban_score, esa_lc, is_whole_country)
     water_score = lock_display_projection(water_score, esa_lc, is_whole_country)
+    road_score = lock_display_projection(road_score, esa_lc, is_whole_country)
+    road_distance = lock_display_projection(road_distance, esa_lc, is_whole_country)
     protected_constraint = lock_display_projection(protected_constraint, esa_lc, is_whole_country)
 
     final_class = safe_clip(final_class, roi, is_whole_country)
@@ -532,6 +653,9 @@ def build_suitability_model(
         "landcover": lc_score,
         "urban": urban_score,
         "water": water_score,
+        "road": road_score,
+        "road_distance": road_distance,
+        "road_fc": road_fc,
         "protected_constraint": protected_constraint,
         "protected_fc": protected_fc,
         "hard_restricted": hard_restricted,
@@ -675,6 +799,7 @@ def add_suitability_layers(
     is_whole_country: bool = False,
     calculate_stats: bool = True,
     constraint_config: dict | None = None,
+    road_config: dict | None = None,
 ):
     """
     เพิ่ม Suitability Layer ลงบนแผนที่
@@ -686,6 +811,7 @@ def add_suitability_layers(
             weights=weights,
             is_whole_country=is_whole_country,
             constraint_config=constraint_config,
+            road_config=road_config,
         )
 
         final_class = result["final_class"]
@@ -742,6 +868,13 @@ def add_suitability_layers(
                 result["water"],
                 SUITABILITY_VIS,
                 "Factor: Water Proximity Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["road"],
+                SUITABILITY_VIS,
+                "Factor: Road Accessibility Suitability",
                 shown=False,
                 opacity=0.35,
             )
@@ -818,14 +951,25 @@ def render_suitability_methodology():
             #### 4. Protected / Forest Reserve Constraint
             ชั้นข้อมูลพื้นที่คุ้มครอง เช่น WDPA, ป่าสงวน, ป่าอนุรักษ์ หรือชั้นข้อมูล GEE Asset ที่ผู้ใช้เพิ่ม จะถูกใช้เป็น **Hard Constraint** และบังคับเป็น class 1 เพื่อกันออกจากพื้นที่เสนอพัฒนา
 
-            #### 5. Urbanization Suitability
+            #### 5. Road Accessibility Suitability
+            ใช้ชั้นข้อมูลถนนที่ผู้ใช้เพิ่มเป็น GEE Asset เพื่อประเมินการเข้าถึงโครงสร้างพื้นฐาน
+
+            - 0–500 เมตร = 5 เหมาะสมมาก
+            - 500–1,500 เมตร = 4
+            - 1,500–3,000 เมตร = 3
+            - 3,000–5,000 เมตร = 2
+            - มากกว่า 5,000 เมตร = 1 ต้นทุนโครงสร้างพื้นฐานสูง
+
+            หากยังไม่ใส่ Road Asset ระบบจะตัดน้ำหนักถนนออกจากสมการอัตโนมัติ
+
+            #### 6. Urbanization Suitability
             ใช้ GHSL SMOD เพื่อดูบริบทความเป็นเมือง
 
             - พื้นที่ชานเมืองหรือกึ่งเมืองได้คะแนนสูง
             - ศูนย์กลางเมืองหนาแน่นได้คะแนนต่ำ เพราะเป็นพื้นที่พัฒนาแล้ว
             - พื้นที่ชนบทมากได้คะแนนต่ำกว่า เพราะอาจขาดโครงสร้างพื้นฐาน
 
-            #### 6. Water Proximity Suitability
+            #### 7. Water Proximity Suitability
             พื้นที่ใกล้น้ำในระยะเหมาะสมมีคุณค่าด้านภูมิทัศน์และ amenity แต่พื้นที่ชิดลำน้ำเกินไปควรจำกัด
 
             - 0–50 เมตร = 1 buffer/riparian zone
@@ -844,6 +988,7 @@ def render_suitability_methodology():
             + landcover × weight
             + urbanization × weight
             + water proximity × weight
+            + road accessibility × weight
             ```
 
             จากนั้น classify เป็น 5 ระดับ:
@@ -861,7 +1006,7 @@ def render_suitability_methodology():
             - Global Flood Database ไม่เหมาะกับน้ำท่วมฉับพลันระดับชุมชนหรือระบบระบายน้ำเมือง
             - WDPA เป็นฐานข้อมูลระดับโลก จึงควรตรวจสอบซ้ำกับข้อมูลทางกฎหมายของไทย เช่น ป่าสงวนแห่งชาติ อุทยานแห่งชาติ เขตห้ามล่าสัตว์ป่า และพื้นที่ ส.ป.ก.
             - หากใช้ชั้นข้อมูลป่าสงวน/ป่าอนุรักษ์จากหน่วยงานไทย ควรอัปโหลดเป็น GEE Asset แล้วใส่ Asset ID ใน Sidebar
-            - โมเดล v1 ยังไม่มี Road Accessibility ซึ่งควรเพิ่มใน v2
+            - Road Accessibility ต้องพึ่งพา Road Asset ที่ผู้ใช้เพิ่มเอง คุณภาพผลจึงขึ้นกับความครบถ้วนของเส้นถนนและการจัดประเภทถนน
             - ผลลัพธ์นี้เป็น decision-support layer ไม่ใช่คำตัดสินทางกฎหมาย
             """
         )
