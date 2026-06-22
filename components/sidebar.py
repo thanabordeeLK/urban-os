@@ -9,6 +9,7 @@ from config.settings import (
     DEFAULT_DISTRICT,
 )
 from services.roi_service import get_provinces, get_districts, get_roi
+from components.local_data_manager import get_registry_asset_ids_by_category
 
 
 # ---------------------------------------------------------
@@ -49,8 +50,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Local Data Manager", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "database", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -126,6 +127,19 @@ def render_sidebar() -> dict:
             )
 
             suitability_config = render_suitability_controls()
+
+        # -------------------------------------------------
+        # Local Data Manager Mode
+        # -------------------------------------------------
+        elif selected_mode == "Local Data Manager":
+            st.markdown("### 🗂️ Local Data Manager")
+
+            basemap_choice = render_basemap_selector(
+                key="local_data_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("จัดการ GEE Asset ID และข้อมูลเฉพาะพื้นที่ แล้วนำไปใช้กับ Suitability Analysis")
 
         # -------------------------------------------------
         # Multi-Agent Mode
@@ -647,6 +661,26 @@ def render_suitability_controls() -> dict:
 
     st.markdown("### 🧭 Suitability Analysis")
     st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
+
+    # ดึง Asset ID จาก Local Data Registry มาเติมเป็นค่าเริ่มต้น
+    # ทำเฉพาะเมื่อ widget key ยังไม่เคยถูกสร้าง เพื่อไม่ทับค่าที่ผู้ใช้แก้เอง
+    if "suit_road_asset_ids" not in st.session_state:
+        registry_roads = get_registry_asset_ids_by_category("roads")
+        if registry_roads:
+            st.session_state["suit_road_asset_ids"] = "\n".join(registry_roads)
+            st.session_state["suit_use_road_accessibility"] = True
+
+    if "suit_facility_asset_ids" not in st.session_state:
+        registry_facilities = get_registry_asset_ids_by_category("public_facilities")
+        if registry_facilities:
+            st.session_state["suit_facility_asset_ids"] = "\n".join(registry_facilities)
+            st.session_state["suit_use_public_facilities"] = True
+
+    if "suit_forest_asset_ids" not in st.session_state:
+        registry_forests = get_registry_asset_ids_by_category("protected_forest")
+        if registry_forests:
+            st.session_state["suit_forest_asset_ids"] = "\n".join(registry_forests)
+
 
     with st.expander("ℹ️ คำอธิบายปัจจัย", expanded=False):
         st.markdown(

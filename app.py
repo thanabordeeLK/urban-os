@@ -18,6 +18,7 @@ from config.auth import initialize_earth_engine
 from components.sidebar import render_sidebar
 from components.map_renderer import create_base_map, add_boundary, render_map
 from components.indicator_cards import render_indicator_cards
+from components.local_data_manager import render_local_data_manager
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -178,7 +179,14 @@ def main() -> None:
         render_suitability_methodology()
 
     # -----------------------------------------------------
-    # 8. Mode: Multi-Agent
+    # 8. Mode: Local Data Manager
+    # -----------------------------------------------------
+    elif selected_mode == "Local Data Manager":
+        # ใช้เฉพาะ base map + boundary เพื่อให้เห็นพื้นที่อ้างอิง
+        pass
+
+    # -----------------------------------------------------
+    # 9. Mode: Multi-Agent
     # -----------------------------------------------------
     elif selected_mode == "Multi-Agent":
         add_multi_agent_evidence_layers(
