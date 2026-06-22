@@ -62,7 +62,8 @@ DEFAULT_WEIGHTS = {
     "landcover": 0.20,
     "urban": 0.15,
     "water": 0.10,
-    "road": 0.20,
+    "road": 0.15,
+    "facility": 0.05,
 }
 
 
@@ -148,6 +149,7 @@ def normalize_weights(weights: dict | None) -> dict:
         "urban": float(weights.get("urban", 0)),
         "water": float(weights.get("water", 0)),
         "road": float(weights.get("road", 0)),
+        "facility": float(weights.get("facility", 0)),
     }
 
     total = sum(clean_weights.values())
@@ -459,6 +461,102 @@ def get_road_accessibility_score(
     return road_score, dist_to_road, road_fc
 
 
+
+# ---------------------------------------------------------
+# Factor 7: Public facility proximity
+# ---------------------------------------------------------
+def get_public_facility_proximity_score(
+    roi,
+    esa_lc: ee.Image,
+    is_whole_country: bool = False,
+    facility_config: dict | None = None,
+) -> tuple[ee.Image, ee.Image, ee.FeatureCollection]:
+    """
+    Public Facility Proximity Suitability จากชั้นข้อมูลสถานบริการสาธารณะ
+    ที่ผู้ใช้เพิ่มเป็น GEE Asset เช่น โรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด
+    สถานีขนส่ง หรือจุดบริการเมืองอื่น ๆ
+
+    แนวคิด:
+    - ใกล้บริการสาธารณะ = เหมาะต่อการพัฒนาเมืองมากกว่า
+    - ไกลบริการสาธารณะมาก = ต้นทุนบริการเมืองสูง
+
+    ระยะคะแนนเริ่มต้น:
+    - <= 1,000m  = 5
+    - <= 3,000m  = 4
+    - <= 5,000m  = 3
+    - <= 10,000m = 2
+    - > 10,000m  = 1
+
+    ถ้ายังไม่มี facility asset ระบบจะคืนคะแนนกลาง 3 แต่ build_suitability_model
+    จะตั้ง weight facility เป็น 0 อัตโนมัติ เพื่อไม่ให้ข้อมูล dummy บิดผล
+    """
+
+    facility_config = facility_config or {}
+    enabled = bool(facility_config.get("enabled", False))
+    asset_ids = facility_config.get("asset_ids") or []
+    buffer_m = float(facility_config.get("buffer_m", 60) or 60)
+    max_distance_m = float(facility_config.get("max_distance_m", 10000) or 10000)
+
+    collections = []
+
+    if enabled:
+        for asset_id in asset_ids:
+            asset_id = str(asset_id).strip()
+            if not asset_id:
+                continue
+
+            try:
+                fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
+                if buffer_m > 0:
+                    # buffer จุด/เส้น/พื้นที่ให้ rasterize ชัดขึ้น
+                    fc = fc.map(lambda f: f.buffer(buffer_m))
+                collections.append(fc)
+            except Exception:
+                pass
+
+    facility_fc = _merge_feature_collections(collections)
+
+    if not enabled or not asset_ids:
+        neutral_score = ee.Image(3).rename("Public_Facility_Proximity_Suitability").toInt()
+        empty_distance = ee.Image(max_distance_m).rename("Distance_To_Public_Facility_Meter")
+        return neutral_score, empty_distance, facility_fc
+
+    facility_mask = (
+        ee.Image(0)
+        .byte()
+        .paint(facility_fc, 1)
+        .unmask(0)
+        .reproject(esa_lc.projection())
+        .rename("Public_Facility_Mask")
+    )
+
+    max_pixels = int(max(max_distance_m / 10, 1))
+
+    dist_to_facility = (
+        facility_mask
+        .fastDistanceTransform(max_pixels)
+        .sqrt()
+        .multiply(10)
+        .rename("Distance_To_Public_Facility_Meter")
+    )
+
+    dist_to_facility = safe_clip(dist_to_facility, roi, is_whole_country)
+
+    facility_score = (
+        ee.Image(1)
+        .where(dist_to_facility.lte(10000), 2)
+        .where(dist_to_facility.lte(5000), 3)
+        .where(dist_to_facility.lte(3000), 4)
+        .where(dist_to_facility.lte(1000), 5)
+        .rename("Public_Facility_Proximity_Suitability")
+        .toInt()
+    )
+
+    facility_score = safe_clip(facility_score, roi, is_whole_country)
+
+    return facility_score, dist_to_facility, facility_fc
+
+
 # ---------------------------------------------------------
 # Hard constraint: Protected / forest reserve areas
 # ---------------------------------------------------------
@@ -548,6 +646,7 @@ def build_suitability_model(
     is_whole_country: bool = False,
     constraint_config: dict | None = None,
     road_config: dict | None = None,
+    facility_config: dict | None = None,
 ) -> dict:
     """
     สร้าง Suitability Model หลัก
@@ -563,6 +662,8 @@ def build_suitability_model(
             water
             road
             road_distance
+            facility
+            facility_distance
             protected_constraint
             hard_restricted
     """
@@ -571,11 +672,17 @@ def build_suitability_model(
     road_asset_ids = road_config.get("asset_ids") or []
     road_enabled = bool(road_config.get("enabled", False)) and bool(road_asset_ids)
 
-    # ถ้ายังไม่มีข้อมูลถนนจริง ให้ตัด road weight ออกจากสมการอัตโนมัติ
-    # ป้องกันไม่ให้คะแนนกลางจาก dummy road layer ไปบิดผลวิเคราะห์
+    facility_config = facility_config or {}
+    facility_asset_ids = facility_config.get("asset_ids") or []
+    facility_enabled = bool(facility_config.get("enabled", False)) and bool(facility_asset_ids)
+
+    # ถ้ายังไม่มีข้อมูลถนน/บริการสาธารณะจริง ให้ตัด weight ออกจากสมการอัตโนมัติ
+    # ป้องกันไม่ให้คะแนนกลางจาก dummy layer ไปบิดผลวิเคราะห์
     weights = dict(weights or DEFAULT_WEIGHTS.copy())
     if not road_enabled:
         weights["road"] = 0
+    if not facility_enabled:
+        weights["facility"] = 0
 
     weights = normalize_weights(weights)
 
@@ -590,6 +697,12 @@ def build_suitability_model(
         is_whole_country=is_whole_country,
         road_config=road_config,
     )
+    facility_score, facility_distance, facility_fc = get_public_facility_proximity_score(
+        roi=roi,
+        esa_lc=esa_lc,
+        is_whole_country=is_whole_country,
+        facility_config=facility_config,
+    )
     protected_constraint, protected_fc = get_protected_area_constraint(
         roi=roi,
         is_whole_country=is_whole_country,
@@ -603,6 +716,7 @@ def build_suitability_model(
         .add(urban_score.multiply(weights["urban"]))
         .add(water_score.multiply(weights["water"]))
         .add(road_score.multiply(weights["road"]))
+        .add(facility_score.multiply(weights["facility"]))
         .rename("Suitability_Raw_Score")
     )
 
@@ -639,6 +753,8 @@ def build_suitability_model(
     water_score = lock_display_projection(water_score, esa_lc, is_whole_country)
     road_score = lock_display_projection(road_score, esa_lc, is_whole_country)
     road_distance = lock_display_projection(road_distance, esa_lc, is_whole_country)
+    facility_score = lock_display_projection(facility_score, esa_lc, is_whole_country)
+    facility_distance = lock_display_projection(facility_distance, esa_lc, is_whole_country)
     protected_constraint = lock_display_projection(protected_constraint, esa_lc, is_whole_country)
 
     final_class = safe_clip(final_class, roi, is_whole_country)
@@ -656,6 +772,9 @@ def build_suitability_model(
         "road": road_score,
         "road_distance": road_distance,
         "road_fc": road_fc,
+        "facility": facility_score,
+        "facility_distance": facility_distance,
+        "facility_fc": facility_fc,
         "protected_constraint": protected_constraint,
         "protected_fc": protected_fc,
         "hard_restricted": hard_restricted,
@@ -800,6 +919,7 @@ def add_suitability_layers(
     calculate_stats: bool = True,
     constraint_config: dict | None = None,
     road_config: dict | None = None,
+    facility_config: dict | None = None,
 ):
     """
     เพิ่ม Suitability Layer ลงบนแผนที่
@@ -812,6 +932,7 @@ def add_suitability_layers(
             is_whole_country=is_whole_country,
             constraint_config=constraint_config,
             road_config=road_config,
+            facility_config=facility_config,
         )
 
         final_class = result["final_class"]
@@ -875,6 +996,13 @@ def add_suitability_layers(
                 result["road"],
                 SUITABILITY_VIS,
                 "Factor: Road Accessibility Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["facility"],
+                SUITABILITY_VIS,
+                "Factor: Public Facility Proximity Suitability",
                 shown=False,
                 opacity=0.35,
             )

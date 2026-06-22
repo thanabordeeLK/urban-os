@@ -123,6 +123,7 @@ def main() -> None:
             show_factors = suitability_config.get("show_factor_layers", False)
             constraint_config = suitability_config.get("constraint_config", {})
             road_config = suitability_config.get("road_config", {})
+            facility_config = suitability_config.get("facility_config", {})
             config_signature = json.dumps(
                 {
                     "province": selected_province,
@@ -132,6 +133,7 @@ def main() -> None:
                     "show_factors": show_factors,
                     "constraint_config": constraint_config,
                     "road_config": road_config,
+                    "facility_config": facility_config,
                 },
                 sort_keys=True,
                 ensure_ascii=False,
@@ -154,6 +156,7 @@ def main() -> None:
                 calculate_stats=calculate_stats,
                 constraint_config=constraint_config,
                 road_config=road_config,
+                facility_config=facility_config,
             )
         else:
             st.info(

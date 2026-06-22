@@ -53,6 +53,7 @@ def _get_weight_text(weights: dict) -> str:
         ("landcover", "Land Cover"),
         ("urban", "Urbanization"),
         ("road", "Road Accessibility"),
+        ("facility", "Public Facility Proximity"),
         ("water", "Water Proximity"),
     ]:
         lines.append(f"- {label}: {weights.get(key, 0)}")
@@ -67,6 +68,7 @@ def build_validation_notes(suitability_config: dict) -> tuple[str, list[str], li
 
     suitability_config = suitability_config or {}
     road_config = suitability_config.get("road_config", {}) or {}
+    facility_config = suitability_config.get("facility_config", {}) or {}
     constraint_config = suitability_config.get("constraint_config", {}) or {}
 
     score = 40
@@ -78,6 +80,12 @@ def build_validation_notes(suitability_config: dict) -> tuple[str, list[str], li
         strengths.append("มี Road Asset ใช้ประเมินการเข้าถึงถนน")
     else:
         gaps.append("ยังไม่มี/ยังไม่เปิดใช้ Road Asset จึงยังประเมิน accessibility ไม่เต็มรูปแบบ")
+
+    if facility_config.get("enabled") and facility_config.get("asset_ids"):
+        score += 10
+        strengths.append("มี Facility Asset ใช้ประเมินการเข้าถึงบริการสาธารณะ")
+    else:
+        gaps.append("ยังไม่มี/ยังไม่เปิดใช้ Facility Asset จึงยังประเมินการเข้าถึงบริการสาธารณะไม่เต็มรูปแบบ")
 
     if constraint_config.get("use_wdpa") or constraint_config.get("asset_ids"):
         score += 20
@@ -120,6 +128,7 @@ def build_suitability_report_markdown(
 
     weights = (suitability_config or {}).get("weights", {}) or {}
     road_config = (suitability_config or {}).get("road_config", {}) or {}
+    facility_config = (suitability_config or {}).get("facility_config", {}) or {}
     constraint_config = (suitability_config or {}).get("constraint_config", {}) or {}
     confidence_level, strengths, gaps = build_validation_notes(suitability_config)
 
@@ -129,9 +138,11 @@ def build_suitability_report_markdown(
     gaps_md = "\n".join([f"- {x}" for x in gaps]) or "- ยังไม่พบช่องว่างสำคัญจาก checklist เบื้องต้น"
 
     road_assets = road_config.get("asset_ids") or []
+    facility_assets = facility_config.get("asset_ids") or []
     forest_assets = constraint_config.get("asset_ids") or []
 
     road_assets_md = "\n".join([f"- `{x}`" for x in road_assets]) or "- ยังไม่ได้ระบุ Road Asset"
+    facility_assets_md = "\n".join([f"- `{x}`" for x in facility_assets]) or "- ยังไม่ได้ระบุ Facility Asset"
     forest_assets_md = "\n".join([f"- `{x}`" for x in forest_assets]) or "- ยังไม่ได้ระบุ Custom Forest/Constraint Asset"
 
     return f"""# Urban OS Suitability Analysis Report
@@ -168,6 +179,14 @@ def build_suitability_report_markdown(
 
 {road_assets_md}
 
+### Public Facility Proximity
+
+- เปิดใช้บริการสาธารณะในสมการ: {facility_config.get("enabled", False)}
+- Buffer จุดบริการ: {facility_config.get("buffer_m", 0)} เมตร
+- ระยะไกลสุดที่ใช้ประเมินบริการสาธารณะ: {facility_config.get("max_distance_m", 0)} เมตร
+
+{facility_assets_md}
+
 ### Protected / Forest Constraints
 
 - ใช้ WDPA: {constraint_config.get("use_wdpa", False)}
@@ -194,7 +213,7 @@ def build_suitability_report_markdown(
 
 1. ตรวจสอบพื้นที่ Class 4–5 เทียบกับถนนจริงและการเข้าถึงภาคสนาม
 2. เติมชั้นข้อมูลป่าสงวน/อุทยาน/เขตห้ามล่าจากหน่วยงานไทย หากยังไม่มี
-3. เพิ่ม Public Facility Proximity เช่น โรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด และสถานีขนส่ง
+3. ตรวจสอบความครบถ้วนของ Facility Asset เช่น โรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด และสถานีขนส่ง
 4. Export พื้นที่ candidate เป็น GeoJSON/Shape ในขั้นถัดไป
 5. ตรวจสอบพื้นที่ด้วยภาพถ่ายดาวเทียมความละเอียดสูงและ field survey ก่อนใช้ประกอบการตัดสินใจจริง
 
