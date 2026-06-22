@@ -49,8 +49,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis"],
-            icons=["map", "cpu", "layers"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -86,6 +86,7 @@ def render_sidebar() -> dict:
         layer_settings = {}
         ai_settings = {}
         suitability_config = None
+        multi_agent_settings = None
 
         # -------------------------------------------------
         # General Plan Mode
@@ -126,6 +127,19 @@ def render_sidebar() -> dict:
 
             suitability_config = render_suitability_controls()
 
+        # -------------------------------------------------
+        # Multi-Agent Mode
+        # -------------------------------------------------
+        elif selected_mode == "Multi-Agent":
+            st.markdown("### 🤖 Multi-Agent")
+
+            basemap_choice = render_basemap_selector(
+                key="multi_agent_basemap",
+                default="Esri Satellite",
+            )
+
+            multi_agent_settings = render_multi_agent_controls()
+
         else:
             basemap_choice = "OpenStreetMap"
 
@@ -139,6 +153,7 @@ def render_sidebar() -> dict:
         "layer_settings": layer_settings,
         "ai_settings": ai_settings,
         "suitability_config": suitability_config,
+        "multi_agent_settings": multi_agent_settings,
     }
 
 
@@ -718,4 +733,104 @@ def render_suitability_controls() -> dict:
         },
         "show_factor_layers": show_factor_layers,
         "run_suitability": run_suitability,
+    }
+
+
+
+# ---------------------------------------------------------
+# Multi-Agent controls
+# ---------------------------------------------------------
+def render_multi_agent_controls() -> dict:
+    """
+    Sidebar controls สำหรับโหมด Multi-Agent
+
+    หลักคิด:
+    - GIS Agent ทำงานเสมอเพื่อเป็นฐานความจริง
+    - ผู้ใช้เลือก Agent เฉพาะทางที่จะเรียกเพิ่ม
+    - Report Agent รวมผลทุกครั้ง
+    """
+
+    st.caption("GIS Agent จะทำงานเสมอเพื่อดึง evidence จาก GEE ก่อน")
+
+    selected_agents = st.multiselect(
+        "เลือก Agent ที่ต้องการเรียกใช้",
+        [
+            "Urban Agent",
+            "Traffic Agent",
+            "Economic Agent",
+            "Environment Agent",
+            "Gemini Vision Agent",
+            "GPT Planning Agent",
+        ],
+        default=[
+            "Urban Agent",
+            "Environment Agent",
+            "Gemini Vision Agent",
+            "GPT Planning Agent",
+        ],
+        key="multi_agent_selected_agents",
+    )
+
+    task = st.text_area(
+        "คำถาม / เป้าหมายการวิเคราะห์",
+        value=(
+            "วิเคราะห์พื้นที่นี้เพื่อประเมินความเหมาะสมในการพัฒนาเมือง "
+            "โดยพิจารณาความลาดชัน น้ำท่วม การใช้ที่ดิน โครงสร้างเมือง "
+            "และเสนอแนวทาง zoning พร้อมข้อควรสำรวจภาคสนาม"
+        ),
+        height=150,
+        key="multi_agent_task",
+    )
+
+    local_data_note = st.text_area(
+        "ข้อมูลเฉพาะพื้นที่เพิ่มเติม เช่น ถนน โครงการ ผังสี ข้อจำกัดท้องถิ่น",
+        value="",
+        height=100,
+        key="multi_agent_local_note",
+    )
+
+    with st.expander("🗺️ Evidence Layers บนแผนที่", expanded=False):
+        show_cop_dem = st.checkbox("DEM", value=True, key="ma_show_cop_dem")
+        show_gfd = st.checkbox("Global Flood Database", value=True, key="ma_show_gfd")
+        show_landcover = st.checkbox("ESA Land Cover", value=True, key="ma_show_landcover")
+        show_urban = st.checkbox("GHSL Urbanization", value=True, key="ma_show_urban")
+        show_dswx_s1 = st.checkbox("DSWx-S1 Water", value=False, key="ma_show_dswx_s1")
+        show_dw = st.checkbox("Dynamic World", value=False, key="ma_show_dw")
+        show_chirts = st.checkbox("CHIRTS Temperature", value=False, key="ma_show_chirts")
+        show_pop = st.checkbox("GHSL Population", value=False, key="ma_show_pop")
+
+    col_run, col_clear = st.columns([2, 1])
+
+    with col_run:
+        run_multi_agent = st.button(
+            "▶️ Run Multi-Agent",
+            key="run_multi_agent",
+            use_container_width=True,
+        )
+
+    with col_clear:
+        clear_multi_agent = st.button(
+            "🧹 Clear",
+            key="clear_multi_agent",
+            use_container_width=True,
+        )
+
+    if clear_multi_agent and "multi_agent_outputs" in st.session_state:
+        del st.session_state["multi_agent_outputs"]
+
+    return {
+        "selected_agents": selected_agents,
+        "task": task,
+        "local_data_note": local_data_note,
+        "run_multi_agent": run_multi_agent,
+        "evidence_layers": {
+            "show_cop_dem": show_cop_dem,
+            "show_gfd": show_gfd,
+            "show_landcover": show_landcover,
+            "show_urban": show_urban,
+            "show_dswx_s1": show_dswx_s1,
+            "show_dw": show_dw,
+            "show_chirts": show_chirts,
+            "show_pop": show_pop,
+        },
     }
