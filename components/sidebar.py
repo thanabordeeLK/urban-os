@@ -656,6 +656,7 @@ def render_suitability_controls() -> dict:
             - **Land Cover**: พื้นที่โล่ง/พุ่มไม้เหมาะกว่า ป่า น้ำ และเมืองเดิม
             - **Urbanization**: พื้นที่ชานเมืองได้คะแนนสูง เพราะใกล้โครงสร้างพื้นฐาน
             - **Water Proximity**: ใกล้น้ำในระยะเหมาะสมดี แต่ชิดลำน้ำเกินไปควรจำกัด
+            - **Protected / Forest Constraint**: ป่าอนุรักษ์ ป่าสงวน หรือพื้นที่คุ้มครองถูกกันออกเป็น hard constraint
             """
         )
 
@@ -718,6 +719,52 @@ def render_suitability_controls() -> dict:
         key="show_factor_layers",
     )
 
+    st.markdown("### 🌲 Protected / Forest Constraints")
+    use_wdpa = st.checkbox(
+        "ใช้ WDPA Protected Areas เป็นพื้นที่กันออก",
+        value=True,
+        key="suit_use_wdpa",
+        help="ใช้ฐานข้อมูล WCMC/WDPA/current/polygons จาก Google Earth Engine",
+    )
+
+    forest_asset_text = st.text_area(
+        "GEE Asset ID ของป่าสงวน/ป่าอนุรักษ์/พื้นที่ห้ามพัฒนา",
+        value="",
+        key="suit_forest_asset_ids",
+        height=90,
+        placeholder=(
+            "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
+            "projects/your-project/assets/forest_reserve_uttaradit\n"
+            "users/yourname/protected_forest"
+        ),
+        help="รองรับ ee.FeatureCollection ที่อัปโหลดไว้ใน Google Earth Engine Assets",
+    )
+
+    forest_buffer_m = st.number_input(
+        "Buffer รอบพื้นที่คุ้มครอง (เมตร)",
+        min_value=0,
+        max_value=5000,
+        value=0,
+        step=50,
+        key="suit_forest_buffer_m",
+        help="ใช้เมื่อต้องการกันชนรอบป่า/พื้นที่คุ้มครอง เช่น 100–500 เมตร",
+    )
+
+    forest_asset_ids = [
+        item.strip()
+        for line in forest_asset_text.splitlines()
+        for item in line.split(",")
+        if item.strip()
+    ]
+
+    if use_wdpa or forest_asset_ids:
+        st.caption(
+            f"เปิดใช้พื้นที่กันออก: WDPA={'เปิด' if use_wdpa else 'ปิด'}, "
+            f"Custom Assets={len(forest_asset_ids)} ชั้นข้อมูล"
+        )
+    else:
+        st.warning("ยังไม่ได้เปิดใช้พื้นที่คุ้มครอง/ป่าสงวนเป็น hard constraint")
+
     # -------------------------------------------------
     # Persistent RUN state
     # -------------------------------------------------
@@ -771,6 +818,11 @@ def render_suitability_controls() -> dict:
             "water": w_water,
         },
         "show_factor_layers": show_factor_layers,
+        "constraint_config": {
+            "use_wdpa": use_wdpa,
+            "asset_ids": forest_asset_ids,
+            "buffer_m": forest_buffer_m,
+        },
         "run_suitability": st.session_state.get("suitability_run_active", False),
         "run_clicked": run_clicked,
         "clear_clicked": clear_clicked,

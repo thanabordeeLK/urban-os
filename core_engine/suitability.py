@@ -15,6 +15,7 @@ FALLBACK_DATASET_CATALOG = {
     "global_flood_db": {"id": "GLOBAL_FLOOD_DB/MODIS_EVENTS/V1"},
     "esa_worldcover": {"id": "ESA/WorldCover/v200"},
     "ghsl_smod": {"id": "JRC/GHSL/P2023A/GHS_SMOD_V2-0/2030"},
+    "wdpa_polygons": {"id": "WCMC/WDPA/current/polygons"},
 }
 
 
@@ -80,6 +81,30 @@ CLASS_COLORS = {
     4: "#a6d96a",
     5: "#1a9641",
 }
+
+# ---------------------------------------------------------
+# Display / analysis consistency
+# ---------------------------------------------------------
+# ใช้ค่าคงที่นี้เพื่อให้ผล final class ไม่เปลี่ยนตามระดับซูมของแผนที่
+# หมายเหตุ: สำหรับระดับประเทศไม่บังคับ reproject เพื่อไม่ให้ GEE หนักเกินไป
+ANALYSIS_SCALE_M = 30
+
+
+def lock_display_projection(image: ee.Image, reference_image: ee.Image, is_whole_country: bool = False) -> ee.Image:
+    """
+    ทำให้ raster ที่แสดงผลบนแผนที่ใช้ projection/scale คงที่
+    ลดอาการสีหรือ class ดูเปลี่ยนเมื่อ zoom in/out จาก GEE tile pyramid
+
+    ใช้กับระดับจังหวัด/อำเภอ/ROI เป็นหลัก
+    ไม่บังคับกับทั้งประเทศ เพราะจะคำนวณหนักเกินจำเป็น
+    """
+    if is_whole_country:
+        return image
+
+    try:
+        return image.reproject(reference_image.projection())
+    except Exception:
+        return image
 
 
 # ---------------------------------------------------------
@@ -304,12 +329,16 @@ def get_water_proximity_score(
     >3,000m     = 2
     """
 
-    water_mask = esa_lc.eq(80).unmask(0)
+    # ใช้เฉพาะกลุ่มน้ำที่มีขนาดพอสมควร เพื่อลด noise จาก pixel น้ำเล็ก ๆ
+    # ที่มักทำให้เกิดวงกลม suitability หลอกเมื่อซูมเข้า
+    water_mask = esa_lc.eq(80).selfMask()
+    water_connected = water_mask.connectedPixelCount(100, True)
+    clean_water_mask = water_mask.updateMask(water_connected.gte(20)).unmask(0)
 
     # ESA WorldCover resolution ประมาณ 10m
     # ใช้ max distance 300 pixels ≈ 3,000m
     dist_to_water = (
-        water_mask
+        clean_water_mask
         .fastDistanceTransform(300)
         .sqrt()
         .multiply(10)
@@ -330,6 +359,87 @@ def get_water_proximity_score(
     return water_score
 
 
+
+# ---------------------------------------------------------
+# Hard constraint: Protected / forest reserve areas
+# ---------------------------------------------------------
+def _merge_feature_collections(collections: list[ee.FeatureCollection]) -> ee.FeatureCollection:
+    """
+    รวม FeatureCollection หลายชุดให้เป็นชุดเดียว
+    """
+    if not collections:
+        return ee.FeatureCollection([])
+
+    merged = ee.FeatureCollection(collections[0])
+    for fc in collections[1:]:
+        merged = merged.merge(fc)
+
+    return merged
+
+
+def get_protected_area_constraint(
+    roi,
+    is_whole_country: bool = False,
+    constraint_config: dict | None = None,
+) -> tuple[ee.Image, ee.FeatureCollection]:
+    """
+    สร้าง raster mask สำหรับพื้นที่ที่ต้องกันออกจากการพัฒนา เช่น
+    - WDPA protected areas
+    - ป่าสงวน / ป่าอนุรักษ์ / ชั้นข้อมูลท้องถิ่นที่ผู้ใช้อัปโหลดเป็น GEE Asset
+
+    ผลลัพธ์:
+    - 1 = restricted / ห้ามหรือควรจำกัดการพัฒนา
+    - 0 = ไม่ใช่พื้นที่กันออกจากชุดข้อมูลนี้
+    """
+
+    constraint_config = constraint_config or {}
+    use_wdpa = bool(constraint_config.get("use_wdpa", True))
+    asset_ids = constraint_config.get("asset_ids") or []
+    buffer_m = float(constraint_config.get("buffer_m", 0) or 0)
+
+    collections = []
+
+    if use_wdpa:
+        try:
+            wdpa = (
+                ee.FeatureCollection(get_dataset_id("wdpa_polygons"))
+                .filterBounds(get_roi_geometry(roi))
+            )
+            collections.append(wdpa)
+        except Exception:
+            pass
+
+    for asset_id in asset_ids:
+        asset_id = str(asset_id).strip()
+        if not asset_id:
+            continue
+
+        try:
+            fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
+            collections.append(fc)
+        except Exception:
+            # ปล่อยให้ GEE raise ตอน evaluate/render ดีกว่าไม่ให้แอปล้มตั้งแต่สร้าง object
+            pass
+
+    protected_fc = _merge_feature_collections(collections)
+
+    if buffer_m > 0:
+        protected_fc = protected_fc.map(lambda f: f.buffer(buffer_m))
+
+    protected_mask = (
+        ee.Image(0)
+        .byte()
+        .paint(protected_fc, 1)
+        .unmask(0)
+        .rename("Protected_Forest_Constraint")
+        .toInt()
+    )
+
+    protected_mask = safe_clip(protected_mask, roi, is_whole_country)
+
+    return protected_mask, protected_fc
+
+
 # ---------------------------------------------------------
 # Build suitability model
 # ---------------------------------------------------------
@@ -337,6 +447,7 @@ def build_suitability_model(
     roi,
     weights: dict | None = None,
     is_whole_country: bool = False,
+    constraint_config: dict | None = None,
 ) -> dict:
     """
     สร้าง Suitability Model หลัก
@@ -350,6 +461,7 @@ def build_suitability_model(
             landcover
             urban
             water
+            protected_constraint
             hard_restricted
     """
 
@@ -360,6 +472,11 @@ def build_suitability_model(
     lc_score, esa_lc = get_landcover_score(roi, is_whole_country)
     urban_score = get_urban_score(roi, is_whole_country)
     water_score = get_water_proximity_score(roi, esa_lc, is_whole_country)
+    protected_constraint, protected_fc = get_protected_area_constraint(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        constraint_config=constraint_config,
+    )
 
     raw_score = (
         slope_score.multiply(weights["slope"])
@@ -375,9 +492,11 @@ def build_suitability_model(
     # Hard constraints:
     # - land cover score = 1 เช่น ป่า น้ำ เมืองเดิม พื้นที่ชุ่มน้ำ
     # - flood score = 1 เช่น ท่วมซ้ำมากกว่า 2 ครั้ง
+    # - protected/forest reserve constraint = 1 เช่น อุทยาน ป่าสงวน ป่าอนุรักษ์ หรือชั้นข้อมูลที่ผู้ใช้กำหนด
     hard_restricted = (
         lc_score.eq(1)
         .Or(flood_score.eq(1))
+        .Or(protected_constraint.eq(1))
         .rename("Hard_Restricted")
     )
 
@@ -388,6 +507,18 @@ def build_suitability_model(
         .rename("Urban_Suitability_Class")
         .toInt()
     )
+
+    # ล็อก projection ของผลลัพธ์ให้คงที่ตาม ESA WorldCover
+    # เพื่อให้การแสดงผลไม่ดูเปลี่ยนเมื่อ zoom in/out
+    final_class = lock_display_projection(final_class, esa_lc, is_whole_country)
+    raw_score = lock_display_projection(raw_score, esa_lc, is_whole_country)
+
+    slope_score = lock_display_projection(slope_score, esa_lc, is_whole_country)
+    flood_score = lock_display_projection(flood_score, esa_lc, is_whole_country)
+    lc_score = lock_display_projection(lc_score, esa_lc, is_whole_country)
+    urban_score = lock_display_projection(urban_score, esa_lc, is_whole_country)
+    water_score = lock_display_projection(water_score, esa_lc, is_whole_country)
+    protected_constraint = lock_display_projection(protected_constraint, esa_lc, is_whole_country)
 
     final_class = safe_clip(final_class, roi, is_whole_country)
     raw_score = safe_clip(raw_score, roi, is_whole_country)
@@ -401,6 +532,8 @@ def build_suitability_model(
         "landcover": lc_score,
         "urban": urban_score,
         "water": water_score,
+        "protected_constraint": protected_constraint,
+        "protected_fc": protected_fc,
         "hard_restricted": hard_restricted,
     }
 
@@ -541,6 +674,7 @@ def add_suitability_layers(
     show_factors: bool = False,
     is_whole_country: bool = False,
     calculate_stats: bool = True,
+    constraint_config: dict | None = None,
 ):
     """
     เพิ่ม Suitability Layer ลงบนแผนที่
@@ -551,6 +685,7 @@ def add_suitability_layers(
             roi=roi,
             weights=weights,
             is_whole_country=is_whole_country,
+            constraint_config=constraint_config,
         )
 
         final_class = result["final_class"]
@@ -559,7 +694,12 @@ def add_suitability_layers(
             final_class,
             SUITABILITY_VIS,
             "Urban Suitability Class",
-            opacity=0.78,
+            opacity=0.92,
+        )
+
+        st.info(
+            "หมายเหตุ: แผนที่หลักคือ Urban Suitability Class เท่านั้น "
+            "ถ้าเปิด Factor Layers สีที่เห็นจะเป็นการซ้อนหลายชั้นข้อมูล ไม่ควรใช้แทนผล final class"
         )
 
         add_custom_legend(
@@ -574,31 +714,43 @@ def add_suitability_layers(
                 result["slope"],
                 SUITABILITY_VIS,
                 "Factor: Slope Suitability",
-                opacity=0.45,
+                shown=False,
+                opacity=0.35,
             )
             Map.addLayer(
                 result["flood"],
                 SUITABILITY_VIS,
                 "Factor: Flood Suitability",
-                opacity=0.45,
+                shown=False,
+                opacity=0.35,
             )
             Map.addLayer(
                 result["landcover"],
                 SUITABILITY_VIS,
                 "Factor: Land Cover Suitability",
-                opacity=0.45,
+                shown=False,
+                opacity=0.35,
             )
             Map.addLayer(
                 result["urban"],
                 SUITABILITY_VIS,
                 "Factor: Urbanization Suitability",
-                opacity=0.45,
+                shown=False,
+                opacity=0.35,
             )
             Map.addLayer(
                 result["water"],
                 SUITABILITY_VIS,
                 "Factor: Water Proximity Suitability",
-                opacity=0.45,
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["protected_constraint"].selfMask(),
+                {"min": 1, "max": 1, "palette": ["8b0000"]},
+                "Hard Constraint: Protected / Forest Reserve",
+                shown=False,
+                opacity=0.70,
             )
 
         try:
@@ -663,14 +815,17 @@ def render_suitability_methodology():
             - เกษตรกรรม = คะแนนปานกลาง เพราะมี trade-off ด้านความมั่นคงอาหาร
             - ป่า น้ำ พื้นที่ชุ่มน้ำ เมืองเดิม = คะแนนต่ำหรือควรจำกัด
 
-            #### 4. Urbanization Suitability
+            #### 4. Protected / Forest Reserve Constraint
+            ชั้นข้อมูลพื้นที่คุ้มครอง เช่น WDPA, ป่าสงวน, ป่าอนุรักษ์ หรือชั้นข้อมูล GEE Asset ที่ผู้ใช้เพิ่ม จะถูกใช้เป็น **Hard Constraint** และบังคับเป็น class 1 เพื่อกันออกจากพื้นที่เสนอพัฒนา
+
+            #### 5. Urbanization Suitability
             ใช้ GHSL SMOD เพื่อดูบริบทความเป็นเมือง
 
             - พื้นที่ชานเมืองหรือกึ่งเมืองได้คะแนนสูง
             - ศูนย์กลางเมืองหนาแน่นได้คะแนนต่ำ เพราะเป็นพื้นที่พัฒนาแล้ว
             - พื้นที่ชนบทมากได้คะแนนต่ำกว่า เพราะอาจขาดโครงสร้างพื้นฐาน
 
-            #### 5. Water Proximity Suitability
+            #### 6. Water Proximity Suitability
             พื้นที่ใกล้น้ำในระยะเหมาะสมมีคุณค่าด้านภูมิทัศน์และ amenity แต่พื้นที่ชิดลำน้ำเกินไปควรจำกัด
 
             - 0–50 เมตร = 1 buffer/riparian zone
@@ -704,6 +859,8 @@ def render_suitability_methodology():
             - Copernicus DEM เป็น DSM อาจรวมความสูงต้นไม้และอาคาร
             - ESA WorldCover อาจจำแนกสวนไม้ยืนต้นกับป่าธรรมชาติคลาดเคลื่อนในประเทศไทย
             - Global Flood Database ไม่เหมาะกับน้ำท่วมฉับพลันระดับชุมชนหรือระบบระบายน้ำเมือง
+            - WDPA เป็นฐานข้อมูลระดับโลก จึงควรตรวจสอบซ้ำกับข้อมูลทางกฎหมายของไทย เช่น ป่าสงวนแห่งชาติ อุทยานแห่งชาติ เขตห้ามล่าสัตว์ป่า และพื้นที่ ส.ป.ก.
+            - หากใช้ชั้นข้อมูลป่าสงวน/ป่าอนุรักษ์จากหน่วยงานไทย ควรอัปโหลดเป็น GEE Asset แล้วใส่ Asset ID ใน Sidebar
             - โมเดล v1 ยังไม่มี Road Accessibility ซึ่งควรเพิ่มใน v2
             - ผลลัพธ์นี้เป็น decision-support layer ไม่ใช่คำตัดสินทางกฎหมาย
             """
