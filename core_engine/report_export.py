@@ -12,6 +12,36 @@ def _fmt_number(value, digits: int = 0) -> str:
         return "0"
 
 
+
+def dataframe_to_markdown_table(df: pd.DataFrame) -> str:
+    """
+    สร้าง Markdown table เองโดยไม่ใช้ pandas.to_markdown()
+    เพื่อหลีกเลี่ยง dependency 'tabulate' บน Streamlit Cloud
+    """
+    if df is None or df.empty:
+        return "_ไม่มีตารางสรุปพื้นที่_"
+
+    safe_df = df.copy()
+
+    def clean_cell(value) -> str:
+        if pd.isna(value):
+            return ""
+        text = str(value)
+        text = text.replace("|", "\\|")
+        text = text.replace("\n", " ")
+        return text
+
+    columns = [clean_cell(c) for c in safe_df.columns]
+    rows = []
+    rows.append("| " + " | ".join(columns) + " |")
+    rows.append("| " + " | ".join(["---"] * len(columns)) + " |")
+
+    for _, row in safe_df.iterrows():
+        rows.append("| " + " | ".join(clean_cell(row[col]) for col in safe_df.columns) + " |")
+
+    return "\n".join(rows)
+
+
 def _get_weight_text(weights: dict) -> str:
     if not weights:
         return "- ยังไม่มีค่าน้ำหนัก"
@@ -93,7 +123,7 @@ def build_suitability_report_markdown(
     constraint_config = (suitability_config or {}).get("constraint_config", {}) or {}
     confidence_level, strengths, gaps = build_validation_notes(suitability_config)
 
-    table_md = df.to_markdown(index=False) if df is not None and not df.empty else "_ไม่มีตารางสรุปพื้นที่_"
+    table_md = dataframe_to_markdown_table(df)
 
     strengths_md = "\n".join([f"- {x}" for x in strengths]) or "- ยังไม่มีจุดแข็งที่ระบบตรวจพบ"
     gaps_md = "\n".join([f"- {x}" for x in gaps]) or "- ยังไม่พบช่องว่างสำคัญจาก checklist เบื้องต้น"
