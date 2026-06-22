@@ -540,6 +540,7 @@ def add_suitability_layers(
     weights: dict | None = None,
     show_factors: bool = False,
     is_whole_country: bool = False,
+    calculate_stats: bool = True,
 ):
     """
     เพิ่ม Suitability Layer ลงบนแผนที่
@@ -601,16 +602,21 @@ def add_suitability_layers(
             )
 
         try:
-            df, summary = calculate_suitability_area_statistics(
-                suitability_class=final_class,
-                roi=roi,
-                is_whole_country=is_whole_country,
-            )
+            if calculate_stats or "suitability_stats_df" not in st.session_state:
+                df, summary = calculate_suitability_area_statistics(
+                    suitability_class=final_class,
+                    roi=roi,
+                    is_whole_country=is_whole_country,
+                )
 
-            st.session_state["suitability_stats_df"] = df
-            st.session_state["suitability_summary"] = summary
+                st.session_state["suitability_stats_df"] = df
+                st.session_state["suitability_summary"] = summary
+            else:
+                df = st.session_state.get("suitability_stats_df")
+                summary = st.session_state.get("suitability_summary", {})
 
-            render_suitability_summary(df, summary)
+            if df is not None:
+                render_suitability_summary(df, summary)
 
         except Exception as exc:
             st.sidebar.warning(f"คำนวณสรุปพื้นที่ Suitability ไม่สำเร็จ: {exc}")

@@ -718,10 +718,49 @@ def render_suitability_controls() -> dict:
         key="show_factor_layers",
     )
 
-    run_suitability = st.button(
-        "▶️ Run Suitability Analysis",
-        key="run_suitability_analysis",
-    )
+    # -------------------------------------------------
+    # Persistent RUN state
+    # -------------------------------------------------
+    # ปัญหาเดิม: st.button() เป็น True แค่รอบเดียว พอ Streamlit rerun
+    # จากการซูม/แพนแผนที่ หรือเปลี่ยน widget ผลวิเคราะห์จะหายทันที
+    # วิธีแก้: เก็บสถานะ run ไว้ใน session_state จนกว่าจะกด Clear
+    if "suitability_run_active" not in st.session_state:
+        st.session_state["suitability_run_active"] = False
+
+    st.markdown("### 🚀 Run Model")
+    col_run, col_clear = st.columns([2, 1])
+
+    with col_run:
+        run_clicked = st.button(
+            "▶️ Run Suitability Analysis",
+            key="run_suitability_analysis",
+            use_container_width=True,
+        )
+
+    with col_clear:
+        clear_clicked = st.button(
+            "🧹 Clear",
+            key="clear_suitability_result",
+            use_container_width=True,
+        )
+
+    if run_clicked:
+        st.session_state["suitability_run_active"] = True
+
+    if clear_clicked:
+        st.session_state["suitability_run_active"] = False
+        for key in [
+            "suitability_stats_df",
+            "suitability_summary",
+            "suitability_config_signature",
+        ]:
+            if key in st.session_state:
+                del st.session_state[key]
+
+    if st.session_state.get("suitability_run_active", False):
+        st.success("Suitability Result Active: ผลวิเคราะห์จะคงอยู่จนกว่าจะกด Clear")
+    else:
+        st.info("กด Run เพื่อเริ่มวิเคราะห์")
 
     return {
         "weights": {
@@ -732,7 +771,9 @@ def render_suitability_controls() -> dict:
             "water": w_water,
         },
         "show_factor_layers": show_factor_layers,
-        "run_suitability": run_suitability,
+        "run_suitability": st.session_state.get("suitability_run_active", False),
+        "run_clicked": run_clicked,
+        "clear_clicked": clear_clicked,
     }
 
 

@@ -1,4 +1,5 @@
 import sys
+import json
 from pathlib import Path
 
 import streamlit as st
@@ -117,12 +118,35 @@ def main() -> None:
         suitability_config = state.get("suitability_config")
 
         if suitability_config and suitability_config.get("run_suitability"):
+            weights = suitability_config.get("weights", {})
+            show_factors = suitability_config.get("show_factor_layers", False)
+            config_signature = json.dumps(
+                {
+                    "province": selected_province,
+                    "district": selected_district,
+                    "is_whole_country": is_whole_country,
+                    "weights": weights,
+                    "show_factors": show_factors,
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+
+            previous_signature = st.session_state.get("suitability_config_signature")
+            calculate_stats = (
+                suitability_config.get("run_clicked", False)
+                or previous_signature != config_signature
+                or "suitability_stats_df" not in st.session_state
+            )
+            st.session_state["suitability_config_signature"] = config_signature
+
             add_suitability_layers(
                 Map=Map,
                 roi=roi,
-                weights=suitability_config.get("weights", {}),
-                show_factors=suitability_config.get("show_factor_layers", False),
+                weights=weights,
+                show_factors=show_factors,
                 is_whole_country=is_whole_country,
+                calculate_stats=calculate_stats,
             )
         else:
             st.info(
@@ -163,6 +187,30 @@ def main() -> None:
             "แผนที่นี้เป็นแบบจำลองเบื้องต้นสำหรับประเมินพื้นที่เหมาะสมต่อการพัฒนาเมือง "
             "โดยอ้างอิง slope, flood history, land cover, urbanization และ water proximity"
         )
+
+        df = st.session_state.get("suitability_stats_df")
+        summary = st.session_state.get("suitability_summary") or {}
+
+        if df is not None:
+            col1, col2, col3 = st.columns(3)
+            col1.metric(
+                "พื้นที่เหมาะสมสูง–สูงมาก",
+                f"{summary.get('development_candidate_rai', 0):,.0f} ไร่",
+                f"{summary.get('candidate_percent', 0):.1f}%",
+            )
+            col2.metric(
+                "พื้นที่ควรหลีกเลี่ยง/จำกัด",
+                f"{summary.get('restricted_rai', 0):,.0f} ไร่",
+            )
+            col3.metric(
+                "พื้นที่รวมที่คำนวณได้",
+                f"{summary.get('total_rai', 0):,.0f} ไร่",
+            )
+            st.dataframe(df, use_container_width=True)
+        elif st.session_state.get("suitability_run_active", False):
+            st.warning("กำลังรอผลสรุปพื้นที่จาก Google Earth Engine")
+        else:
+            st.info("ยังไม่มีผลวิเคราะห์ กด Run Suitability Analysis ใน Sidebar ก่อน")
 
     elif selected_mode == "Multi-Agent":
         outputs = run_multi_agent_if_requested(
