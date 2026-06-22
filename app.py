@@ -259,6 +259,13 @@ def main() -> None:
         else:
             st.info("ยังไม่มีผลวิเคราะห์ กด Run Suitability Analysis ใน Sidebar ก่อน")
 
+    elif selected_mode == "Local Data Manager":
+        render_local_data_manager(
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+
     elif selected_mode == "Multi-Agent":
         outputs = run_multi_agent_if_requested(
             roi=roi,
