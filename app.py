@@ -33,6 +33,7 @@ from core_engine.multi_agent import (
     run_multi_agent_if_requested,
     render_multi_agent_outputs,
 )
+from core_engine.report_export import render_suitability_export_panel
 
 
 def render_header() -> None:
@@ -214,6 +215,15 @@ def main() -> None:
                 f"{summary.get('total_rai', 0):,.0f} ไร่",
             )
             st.dataframe(df, use_container_width=True)
+
+            render_suitability_export_panel(
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+                summary=summary,
+                df=df,
+                suitability_config=state.get("suitability_config") or {},
+            )
         elif st.session_state.get("suitability_run_active", False):
             st.warning("กำลังรอผลสรุปพื้นที่จาก Google Earth Engine")
         else:
