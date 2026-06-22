@@ -34,6 +34,7 @@ from core_engine.multi_agent import (
     render_multi_agent_outputs,
 )
 from core_engine.report_export import render_suitability_export_panel
+from core_engine.candidate_export import render_candidate_area_export_panel
 
 
 def render_header() -> None:
@@ -140,6 +141,16 @@ def main() -> None:
             )
 
             previous_signature = st.session_state.get("suitability_config_signature")
+            if previous_signature and previous_signature != config_signature:
+                for cache_key in [
+                    "candidate_export_geojson_bytes",
+                    "candidate_export_csv_bytes",
+                    "candidate_export_df",
+                    "candidate_export_count",
+                    "candidate_export_settings",
+                ]:
+                    st.session_state.pop(cache_key, None)
+
             calculate_stats = (
                 suitability_config.get("run_clicked", False)
                 or previous_signature != config_signature
@@ -226,6 +237,14 @@ def main() -> None:
                 summary=summary,
                 df=df,
                 suitability_config=state.get("suitability_config") or {},
+            )
+
+            render_candidate_area_export_panel(
+                roi=roi,
+                suitability_class=st.session_state.get("suitability_final_class"),
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
             )
         elif st.session_state.get("suitability_run_active", False):
             st.warning("กำลังรอผลสรุปพื้นที่จาก Google Earth Engine")

@@ -930,6 +930,14 @@ def render_suitability_controls() -> dict:
             "suitability_stats_df",
             "suitability_summary",
             "suitability_config_signature",
+            "suitability_final_class",
+            "suitability_raw_score",
+            "suitability_weights_normalized",
+            "candidate_export_geojson_bytes",
+            "candidate_export_csv_bytes",
+            "candidate_export_df",
+            "candidate_export_count",
+            "candidate_export_settings",
         ]:
             if key in st.session_state:
                 del st.session_state[key]

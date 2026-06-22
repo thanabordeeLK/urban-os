@@ -937,6 +937,11 @@ def add_suitability_layers(
 
         final_class = result["final_class"]
 
+        # เก็บผล raster ไว้สำหรับ Candidate Area Export
+        st.session_state["suitability_final_class"] = final_class
+        st.session_state["suitability_raw_score"] = result.get("raw_score")
+        st.session_state["suitability_weights_normalized"] = result.get("weights")
+
         Map.addLayer(
             final_class,
             SUITABILITY_VIS,
