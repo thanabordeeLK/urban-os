@@ -890,318 +890,342 @@ def render_suitability_controls() -> dict:
             """
         )
 
-    w_slope = st.slider(
-        "Slope",
-        0.0,
-        1.0,
-        0.10,
-        0.05,
-        key="suit_w_slope",
-    )
-
-    w_flood = st.slider(
-        "Flood Risk",
-        0.0,
-        1.0,
-        0.18,
-        0.05,
-        key="suit_w_flood",
-    )
-
-    w_landcover = st.slider(
-        "Land Cover",
-        0.0,
-        1.0,
-        0.14,
-        0.05,
-        key="suit_w_landcover",
-    )
-
-    w_urban = st.slider(
-        "Urbanization",
-        0.0,
-        1.0,
-        0.08,
-        0.05,
-        key="suit_w_urban",
-    )
-
-    w_road = st.slider(
-        "Road Accessibility",
-        0.0,
-        1.0,
-        0.18,
-        0.05,
-        key="suit_w_road",
-    )
-
-    w_facility = st.slider(
-        "Public Facility Proximity",
-        0.0,
-        1.0,
-        0.18,
-        0.05,
-        key="suit_w_facility",
-    )
-
-    w_heat = st.slider(
-        "Urban Heat Risk / UHI Penalty",
-        0.0,
-        1.0,
-        0.10,
-        0.05,
-        key="suit_w_heat",
-    )
-
-    w_water = st.slider(
-        "Water Proximity",
-        0.0,
-        1.0,
-        0.04,
-        0.05,
-        key="suit_w_water",
-    )
-
-    total_weight = w_slope + w_flood + w_landcover + w_urban + w_road + w_facility + w_heat + w_water
-
-    if total_weight == 0:
-        st.warning("น้ำหนักรวมเป็น 0 กรุณาเพิ่มน้ำหนักอย่างน้อย 1 ปัจจัย")
-    else:
-        st.caption(f"น้ำหนักรวมปัจจุบัน: {total_weight:.2f}")
-        st.caption("ระบบจะ normalize น้ำหนักให้อัตโนมัติในขั้นคำนวณ")
-
-    show_factor_layers = st.checkbox(
-        "แสดง Factor Layers",
-        value=False,
-        key="show_factor_layers",
-    )
-
-
-    st.markdown("### 🛣️ Road Accessibility")
-    use_road_accessibility = st.checkbox(
-        "ใช้ชั้นข้อมูลถนนเป็นปัจจัยวิเคราะห์",
-        value=False,
-        key="suit_use_road_accessibility",
-        help="ต้องใส่ GEE Asset ID ของถนนก่อน ระบบจึงจะนำถนนเข้าคำนวณ",
-    )
-
-    road_asset_text = st.text_area(
-        "GEE Asset ID ของถนน / โครงข่ายคมนาคม",
-        value="",
-        key="suit_road_asset_ids",
-        height=90,
-        placeholder=(
-            "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
-            "projects/your-project/assets/roads_uttaradit\n"
-            "users/yourname/local_roads"
-        ),
-        help="รองรับ ee.FeatureCollection ที่เป็น line หรือ polygon ของถนนจาก Google Earth Engine Assets",
-    )
-
-    road_buffer_m = st.number_input(
-        "Buffer เส้นถนนก่อนคำนวณระยะ (เมตร)",
-        min_value=0,
-        max_value=200,
-        value=20,
-        step=5,
-        key="suit_road_buffer_m",
-        help="ช่วยให้เส้นถนน rasterize ชัดขึ้น โดยเฉพาะเส้นถนนจาก shapefile",
-    )
-
-    road_max_distance_m = st.number_input(
-        "ระยะไกลสุดที่ใช้ประเมินถนน (เมตร)",
-        min_value=1000,
-        max_value=20000,
-        value=5000,
-        step=500,
-        key="suit_road_max_distance_m",
-    )
-
-    road_asset_ids, invalid_road_asset_ids = _split_valid_invalid_asset_ids(road_asset_text)
-    _render_invalid_asset_warning("Road Asset ID", invalid_road_asset_ids)
-
-    if use_road_accessibility and road_asset_ids:
-        st.caption(f"เปิดใช้ Road Accessibility: {len(road_asset_ids)} ชั้นข้อมูล")
-    elif use_road_accessibility and invalid_road_asset_ids:
-        st.warning("เปิดใช้ถนนแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
-    elif use_road_accessibility and not road_asset_ids:
-        st.warning("เปิดใช้ถนนแล้ว แต่ยังไม่ได้ใส่ Road Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
-    else:
-        st.caption("ยังไม่ใช้ Road Accessibility ในสมการ")
-
-
-    st.markdown("### 🏥 Public Facility Proximity")
-    use_public_facilities = st.checkbox(
-        "ใช้ชั้นข้อมูลบริการสาธารณะเป็นปัจจัยวิเคราะห์",
-        value=False,
-        key="suit_use_public_facilities",
-        help="ใช้กับ GEE Asset ID ของโรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด สถานีขนส่ง หรือจุดบริการเมือง",
-    )
-
-    facility_asset_text = st.text_area(
-        "GEE Asset ID ของบริการสาธารณะ / จุดศูนย์กลางเมือง",
-        value="",
-        key="suit_facility_asset_ids",
-        height=90,
-        placeholder=(
-            "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
-            "projects/your-project/assets/public_facilities_uttaradit\n"
-            "users/yourname/hospitals_schools_markets"
-        ),
-        help="รองรับ ee.FeatureCollection ที่เป็น point/line/polygon ของบริการสาธารณะจาก Google Earth Engine Assets",
-    )
-
-    facility_buffer_m = st.number_input(
-        "Buffer จุดบริการก่อนคำนวณระยะ (เมตร)",
-        min_value=0,
-        max_value=500,
-        value=60,
-        step=10,
-        key="suit_facility_buffer_m",
-        help="ช่วยให้จุดบริการสาธารณะ rasterize ชัดขึ้น โดยเฉพาะข้อมูลจุดจาก POI",
-    )
-
-    facility_max_distance_m = st.number_input(
-        "ระยะไกลสุดที่ใช้ประเมินบริการสาธารณะ (เมตร)",
-        min_value=1000,
-        max_value=30000,
-        value=10000,
-        step=500,
-        key="suit_facility_max_distance_m",
-    )
-
-    facility_asset_ids, invalid_facility_asset_ids = _split_valid_invalid_asset_ids(facility_asset_text)
-    _render_invalid_asset_warning("Facility Asset ID", invalid_facility_asset_ids)
-
-    if use_public_facilities and facility_asset_ids:
-        st.caption(f"เปิดใช้ Public Facility Proximity: {len(facility_asset_ids)} ชั้นข้อมูล")
-    elif use_public_facilities and invalid_facility_asset_ids:
-        st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำเข้าคะแนน")
-    elif use_public_facilities and not facility_asset_ids:
-        st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ยังไม่ได้ใส่ Facility Asset ID ระบบจะยังไม่นำเข้าคะแนน")
-    else:
-        st.caption("ยังไม่ใช้ Public Facility Proximity ในสมการ")
-
-
-    st.markdown("### 🌡️ Urban Heat Risk / UHI Penalty")
-    use_heat_penalty = st.checkbox(
-        "ใช้ UHI / Heat Risk เป็นปัจจัยหักคะแนนความเหมาะสม",
-        value=False,
-        key="suit_use_heat_penalty",
-        help="ใช้ Landsat LST เพื่อหักคะแนนพื้นที่ร้อนจัด เหมาะกับการวิเคราะห์เมืองน่าอยู่และ Green Infrastructure",
-    )
-
-    with st.expander("ตั้งค่า Heat Penalty", expanded=False):
-        col_hs, col_he = st.columns(2)
-
-        with col_hs:
-            heat_start_date = st.date_input(
-                "Heat start date",
-                value=date(2025, 3, 1),
-                key="suit_heat_start_date",
-            )
-
-        with col_he:
-            heat_end_date = st.date_input(
-                "Heat end date",
-                value=date(2025, 5, 31),
-                key="suit_heat_end_date",
-            )
-
-        heat_composite_method = st.selectbox(
-            "Heat composite method",
-            ["median", "mean", "max"],
-            index=0,
-            key="suit_heat_composite_method",
-            help="median เสถียรสุด, max ใช้ดูความร้อนสูงสุดแต่เสี่ยง noise",
-        )
-
-        heat_risk_mode = st.selectbox(
-            "Heat Risk Classification",
-            ["relative", "absolute"],
-            index=0,
-            key="suit_heat_risk_mode",
-            help="relative = แบ่งตาม percentile ใน ROI, absolute = แบ่งตาม °C คงที่",
-        )
-
-        heat_cloud_cover_max = st.slider(
-            "Heat cloud cover max (%)",
-            0,
-            100,
-            60,
-            5,
-            key="suit_heat_cloud_cover_max",
-        )
-
-        heat_use_landsat8 = st.checkbox(
-            "Heat source: Landsat 8",
-            value=True,
-            key="suit_heat_use_landsat8",
-        )
-
-        heat_use_landsat9 = st.checkbox(
-            "Heat source: Landsat 9",
-            value=True,
-            key="suit_heat_use_landsat9",
-        )
-
-    if use_heat_penalty:
-        st.success("เปิดใช้ Heat Penalty: พื้นที่ Heat Risk สูงจะถูกหักคะแนน")
-    else:
-        st.caption("ยังไม่ใช้ Heat Penalty ในสมการ")
-
-    st.markdown("### 🌲 Protected / Forest Constraints")
-    use_wdpa = st.checkbox(
-        "ใช้ WDPA Protected Areas เป็นพื้นที่กันออก",
-        value=True,
-        key="suit_use_wdpa",
-        help="ใช้ฐานข้อมูล WCMC/WDPA/current/polygons จาก Google Earth Engine",
-    )
-
-    forest_asset_text = st.text_area(
-        "GEE Asset ID ของป่าสงวน/ป่าอนุรักษ์/พื้นที่ห้ามพัฒนา",
-        value="",
-        key="suit_forest_asset_ids",
-        height=90,
-        placeholder=(
-            "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
-            "projects/your-project/assets/forest_reserve_uttaradit\n"
-            "users/yourname/protected_forest"
-        ),
-        help="รองรับ ee.FeatureCollection ที่อัปโหลดไว้ใน Google Earth Engine Assets",
-    )
-
-    forest_buffer_m = st.number_input(
-        "Buffer รอบพื้นที่คุ้มครอง (เมตร)",
-        min_value=0,
-        max_value=5000,
-        value=100,
-        step=50,
-        key="suit_forest_buffer_m",
-        help="ใช้เมื่อต้องการกันชนรอบป่า/พื้นที่คุ้มครอง เช่น 100–500 เมตร",
-    )
-
-    forest_asset_ids, invalid_forest_asset_ids = _split_valid_invalid_asset_ids(forest_asset_text)
-    _render_invalid_asset_warning("Forest / Constraint Asset ID", invalid_forest_asset_ids)
-
-    if use_wdpa or forest_asset_ids:
+    with st.expander("⚖️ ตั้งค่าน้ำหนักปัจจัย Suitability", expanded=False):
         st.caption(
-            f"เปิดใช้พื้นที่กันออก: WDPA={'เปิด' if use_wdpa else 'ปิด'}, "
-            f"Custom Assets={len(forest_asset_ids)} ชั้นข้อมูล"
+            "ปรับน้ำหนักแต่ละปัจจัยได้จากตรงนี้ ระบบจะ normalize ให้อัตโนมัติ "
+            "ค่าเริ่มต้นอ้างอิง Planning Standards Preset"
         )
-    else:
-        st.warning("ยังไม่ได้เปิดใช้พื้นที่คุ้มครอง/ป่าสงวนเป็น hard constraint")
 
-    # -------------------------------------------------
-    # Persistent RUN state
-    # -------------------------------------------------
-    # ปัญหาเดิม: st.button() เป็น True แค่รอบเดียว พอ Streamlit rerun
-    # จากการซูม/แพนแผนที่ หรือเปลี่ยน widget ผลวิเคราะห์จะหายทันที
-    # วิธีแก้: เก็บสถานะ run ไว้ใน session_state จนกว่าจะกด Clear
-    if "suitability_run_active" not in st.session_state:
-        st.session_state["suitability_run_active"] = False
+        w_slope = st.slider(
+            "Slope",
+            0.0,
+            1.0,
+            0.10,
+            0.05,
+            key="suit_w_slope",
+        )
 
-    st.markdown("### 🚀 Run Model")
+        w_flood = st.slider(
+            "Flood Risk",
+            0.0,
+            1.0,
+            0.18,
+            0.05,
+            key="suit_w_flood",
+        )
+
+        w_landcover = st.slider(
+            "Land Cover",
+            0.0,
+            1.0,
+            0.14,
+            0.05,
+            key="suit_w_landcover",
+        )
+
+        w_urban = st.slider(
+            "Urbanization",
+            0.0,
+            1.0,
+            0.08,
+            0.05,
+            key="suit_w_urban",
+        )
+
+        w_road = st.slider(
+            "Road Accessibility",
+            0.0,
+            1.0,
+            0.18,
+            0.05,
+            key="suit_w_road",
+        )
+
+        w_facility = st.slider(
+            "Public Facility Proximity",
+            0.0,
+            1.0,
+            0.18,
+            0.05,
+            key="suit_w_facility",
+        )
+
+        w_heat = st.slider(
+            "Urban Heat Risk / UHI Penalty",
+            0.0,
+            1.0,
+            0.10,
+            0.05,
+            key="suit_w_heat",
+        )
+
+        w_water = st.slider(
+            "Water Proximity",
+            0.0,
+            1.0,
+            0.04,
+            0.05,
+            key="suit_w_water",
+        )
+
+        total_weight = (
+            w_slope
+            + w_flood
+            + w_landcover
+            + w_urban
+            + w_road
+            + w_facility
+            + w_heat
+            + w_water
+        )
+
+        if total_weight == 0:
+            st.warning("น้ำหนักรวมเป็น 0 กรุณาเพิ่มน้ำหนักอย่างน้อย 1 ปัจจัย")
+        else:
+            st.caption(f"น้ำหนักรวมปัจจุบัน: {total_weight:.2f}")
+            st.caption("ระบบจะ normalize น้ำหนักให้อัตโนมัติในขั้นคำนวณ")
+
+    with st.expander("🧩 การแสดงผล Factor Layers", expanded=False):
+        show_factor_layers = st.checkbox(
+            "แสดง Factor Layers",
+            value=False,
+            key="show_factor_layers",
+            help="เปิดเพื่อดูชั้นข้อมูลย่อย เช่น slope, flood, road, facility, heat แต่ไม่ควรใช้แทนผล Urban Suitability Class",
+        )
+        st.caption(
+            "แนะนำให้ปิดไว้ก่อนเวลาตีความผลหลัก เพราะ Factor Layers เป็นชั้นข้อมูลซ้อนเพื่อใช้ตรวจสอบโมเดล"
+        )
+
+
+    with st.expander("🛣️ Road Accessibility", expanded=False):
+        use_road_accessibility = st.checkbox(
+            "ใช้ชั้นข้อมูลถนนเป็นปัจจัยวิเคราะห์",
+            value=False,
+            key="suit_use_road_accessibility",
+            help="ต้องใส่ GEE Asset ID ของถนนก่อน ระบบจึงจะนำถนนเข้าคำนวณ",
+        )
+
+        road_asset_text = st.text_area(
+            "GEE Asset ID ของถนน / โครงข่ายคมนาคม",
+            value="",
+            key="suit_road_asset_ids",
+            height=90,
+            placeholder=(
+                "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
+                "projects/your-project/assets/roads_uttaradit\n"
+                "users/yourname/local_roads"
+            ),
+            help="รองรับ ee.FeatureCollection ที่เป็น line หรือ polygon ของถนนจาก Google Earth Engine Assets",
+        )
+
+        road_buffer_m = st.number_input(
+            "Buffer เส้นถนนก่อนคำนวณระยะ (เมตร)",
+            min_value=0,
+            max_value=200,
+            value=20,
+            step=5,
+            key="suit_road_buffer_m",
+            help="ช่วยให้เส้นถนน rasterize ชัดขึ้น โดยเฉพาะเส้นถนนจาก shapefile",
+        )
+
+        road_max_distance_m = st.number_input(
+            "ระยะไกลสุดที่ใช้ประเมินถนน (เมตร)",
+            min_value=1000,
+            max_value=20000,
+            value=5000,
+            step=500,
+            key="suit_road_max_distance_m",
+        )
+
+        road_asset_ids, invalid_road_asset_ids = _split_valid_invalid_asset_ids(road_asset_text)
+        _render_invalid_asset_warning("Road Asset ID", invalid_road_asset_ids)
+
+        if use_road_accessibility and road_asset_ids:
+            st.caption(f"เปิดใช้ Road Accessibility: {len(road_asset_ids)} ชั้นข้อมูล")
+        elif use_road_accessibility and invalid_road_asset_ids:
+            st.warning("เปิดใช้ถนนแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
+        elif use_road_accessibility and not road_asset_ids:
+            st.warning("เปิดใช้ถนนแล้ว แต่ยังไม่ได้ใส่ Road Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
+        else:
+            st.caption("ยังไม่ใช้ Road Accessibility ในสมการ")
+
+
+
+    with st.expander("🏥 Public Facility Proximity", expanded=False):
+        use_public_facilities = st.checkbox(
+            "ใช้ชั้นข้อมูลบริการสาธารณะเป็นปัจจัยวิเคราะห์",
+            value=False,
+            key="suit_use_public_facilities",
+            help="ใช้กับ GEE Asset ID ของโรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด สถานีขนส่ง หรือจุดบริการเมือง",
+        )
+
+        facility_asset_text = st.text_area(
+            "GEE Asset ID ของบริการสาธารณะ / จุดศูนย์กลางเมือง",
+            value="",
+            key="suit_facility_asset_ids",
+            height=90,
+            placeholder=(
+                "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
+                "projects/your-project/assets/public_facilities_uttaradit\n"
+                "users/yourname/hospitals_schools_markets"
+            ),
+            help="รองรับ ee.FeatureCollection ที่เป็น point/line/polygon ของบริการสาธารณะจาก Google Earth Engine Assets",
+        )
+
+        facility_buffer_m = st.number_input(
+            "Buffer จุดบริการก่อนคำนวณระยะ (เมตร)",
+            min_value=0,
+            max_value=500,
+            value=60,
+            step=10,
+            key="suit_facility_buffer_m",
+            help="ช่วยให้จุดบริการสาธารณะ rasterize ชัดขึ้น โดยเฉพาะข้อมูลจุดจาก POI",
+        )
+
+        facility_max_distance_m = st.number_input(
+            "ระยะไกลสุดที่ใช้ประเมินบริการสาธารณะ (เมตร)",
+            min_value=1000,
+            max_value=30000,
+            value=10000,
+            step=500,
+            key="suit_facility_max_distance_m",
+        )
+
+        facility_asset_ids, invalid_facility_asset_ids = _split_valid_invalid_asset_ids(facility_asset_text)
+        _render_invalid_asset_warning("Facility Asset ID", invalid_facility_asset_ids)
+
+        if use_public_facilities and facility_asset_ids:
+            st.caption(f"เปิดใช้ Public Facility Proximity: {len(facility_asset_ids)} ชั้นข้อมูล")
+        elif use_public_facilities and invalid_facility_asset_ids:
+            st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำเข้าคะแนน")
+        elif use_public_facilities and not facility_asset_ids:
+            st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ยังไม่ได้ใส่ Facility Asset ID ระบบจะยังไม่นำเข้าคะแนน")
+        else:
+            st.caption("ยังไม่ใช้ Public Facility Proximity ในสมการ")
+
+
+
+    with st.expander("🌡️ Urban Heat Risk / UHI Penalty", expanded=False):
+        use_heat_penalty = st.checkbox(
+            "ใช้ UHI / Heat Risk เป็นปัจจัยหักคะแนนความเหมาะสม",
+            value=False,
+            key="suit_use_heat_penalty",
+            help="ใช้ Landsat LST เพื่อหักคะแนนพื้นที่ร้อนจัด เหมาะกับการวิเคราะห์เมืองน่าอยู่และ Green Infrastructure",
+        )
+
+        with st.expander("ตั้งค่า Heat Penalty", expanded=False):
+            col_hs, col_he = st.columns(2)
+
+            with col_hs:
+                heat_start_date = st.date_input(
+                    "Heat start date",
+                    value=date(2025, 3, 1),
+                    key="suit_heat_start_date",
+                )
+
+            with col_he:
+                heat_end_date = st.date_input(
+                    "Heat end date",
+                    value=date(2025, 5, 31),
+                    key="suit_heat_end_date",
+                )
+
+            heat_composite_method = st.selectbox(
+                "Heat composite method",
+                ["median", "mean", "max"],
+                index=0,
+                key="suit_heat_composite_method",
+                help="median เสถียรสุด, max ใช้ดูความร้อนสูงสุดแต่เสี่ยง noise",
+            )
+
+            heat_risk_mode = st.selectbox(
+                "Heat Risk Classification",
+                ["relative", "absolute"],
+                index=0,
+                key="suit_heat_risk_mode",
+                help="relative = แบ่งตาม percentile ใน ROI, absolute = แบ่งตาม °C คงที่",
+            )
+
+            heat_cloud_cover_max = st.slider(
+                "Heat cloud cover max (%)",
+                0,
+                100,
+                60,
+                5,
+                key="suit_heat_cloud_cover_max",
+            )
+
+            heat_use_landsat8 = st.checkbox(
+                "Heat source: Landsat 8",
+                value=True,
+                key="suit_heat_use_landsat8",
+            )
+
+            heat_use_landsat9 = st.checkbox(
+                "Heat source: Landsat 9",
+                value=True,
+                key="suit_heat_use_landsat9",
+            )
+
+        if use_heat_penalty:
+            st.success("เปิดใช้ Heat Penalty: พื้นที่ Heat Risk สูงจะถูกหักคะแนน")
+        else:
+            st.caption("ยังไม่ใช้ Heat Penalty ในสมการ")
+
+
+    with st.expander("🌲 Protected / Forest Constraints", expanded=False):
+        use_wdpa = st.checkbox(
+            "ใช้ WDPA Protected Areas เป็นพื้นที่กันออก",
+            value=True,
+            key="suit_use_wdpa",
+            help="ใช้ฐานข้อมูล WCMC/WDPA/current/polygons จาก Google Earth Engine",
+        )
+
+        forest_asset_text = st.text_area(
+            "GEE Asset ID ของป่าสงวน/ป่าอนุรักษ์/พื้นที่ห้ามพัฒนา",
+            value="",
+            key="suit_forest_asset_ids",
+            height=90,
+            placeholder=(
+                "ใส่ 1 Asset ID ต่อ 1 บรรทัด เช่น\n"
+                "projects/your-project/assets/forest_reserve_uttaradit\n"
+                "users/yourname/protected_forest"
+            ),
+            help="รองรับ ee.FeatureCollection ที่อัปโหลดไว้ใน Google Earth Engine Assets",
+        )
+
+        forest_buffer_m = st.number_input(
+            "Buffer รอบพื้นที่คุ้มครอง (เมตร)",
+            min_value=0,
+            max_value=5000,
+            value=100,
+            step=50,
+            key="suit_forest_buffer_m",
+            help="ใช้เมื่อต้องการกันชนรอบป่า/พื้นที่คุ้มครอง เช่น 100–500 เมตร",
+        )
+
+        forest_asset_ids, invalid_forest_asset_ids = _split_valid_invalid_asset_ids(forest_asset_text)
+        _render_invalid_asset_warning("Forest / Constraint Asset ID", invalid_forest_asset_ids)
+
+        if use_wdpa or forest_asset_ids:
+            st.caption(
+                f"เปิดใช้พื้นที่กันออก: WDPA={'เปิด' if use_wdpa else 'ปิด'}, "
+                f"Custom Assets={len(forest_asset_ids)} ชั้นข้อมูล"
+            )
+        else:
+            st.warning("ยังไม่ได้เปิดใช้พื้นที่คุ้มครอง/ป่าสงวนเป็น hard constraint")
+
+        # -------------------------------------------------
+        # Persistent RUN state
+        # -------------------------------------------------
+        # ปัญหาเดิม: st.button() เป็น True แค่รอบเดียว พอ Streamlit rerun
+        # จากการซูม/แพนแผนที่ หรือเปลี่ยน widget ผลวิเคราะห์จะหายทันที
+        # วิธีแก้: เก็บสถานะ run ไว้ใน session_state จนกว่าจะกด Clear
+        if "suitability_run_active" not in st.session_state:
+            st.session_state["suitability_run_active"] = False
+
+        st.markdown("### 🚀 Run Model")
+
     col_run, col_clear = st.columns([2, 1])
 
     with col_run:
