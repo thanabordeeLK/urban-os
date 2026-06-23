@@ -5,6 +5,7 @@ import pandas as pd
 from config.datasets import DATASET_CATALOG
 from components.map_renderer import add_custom_legend
 from services.gee_service import safe_clip
+from config.planning_standards import get_suitability_weight_preset
 
 
 # ---------------------------------------------------------
@@ -56,15 +57,7 @@ FACTOR_SCORE_LEGEND = {
 }
 
 
-DEFAULT_WEIGHTS = {
-    "slope": 0.15,
-    "flood": 0.20,
-    "landcover": 0.20,
-    "urban": 0.15,
-    "water": 0.10,
-    "road": 0.15,
-    "facility": 0.05,
-}
+DEFAULT_WEIGHTS = get_suitability_weight_preset()
 
 
 CLASS_LABELS = {

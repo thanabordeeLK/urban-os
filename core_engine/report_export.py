@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import pandas as pd
 import streamlit as st
+from config.planning_standards import get_standard_profile
 
 
 def _fmt_number(value, digits: int = 0) -> str:

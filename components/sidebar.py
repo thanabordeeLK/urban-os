@@ -56,6 +56,16 @@ from config.settings import (
 )
 from services.roi_service import get_provinces, get_districts, get_roi
 from components.local_data_manager import get_registry_asset_ids_by_category
+from config.planning_standards import (
+    get_standard_profile,
+    get_suitability_weight_preset,
+    get_road_defaults,
+    get_public_facility_defaults,
+    get_restrictive_area_defaults,
+    get_uhi_defaults,
+    get_density_reference,
+    get_psa_residential_factors,
+)
 
 
 # ---------------------------------------------------------
@@ -712,6 +722,95 @@ def render_ai_simulation_controls() -> dict:
     }
 
 
+
+# ---------------------------------------------------------
+# Planning standards preset helpers
+# ---------------------------------------------------------
+def apply_dpt_suitability_preset_to_session() -> None:
+    weights = get_suitability_weight_preset()
+    road_defaults = get_road_defaults()
+    facility_defaults = get_public_facility_defaults()
+    restrictive_defaults = get_restrictive_area_defaults()
+
+    st.session_state["suit_w_slope"] = float(weights.get("slope", 0.10))
+    st.session_state["suit_w_flood"] = float(weights.get("flood", 0.20))
+    st.session_state["suit_w_landcover"] = float(weights.get("landcover", 0.15))
+    st.session_state["suit_w_urban"] = float(weights.get("urban", 0.10))
+    st.session_state["suit_w_road"] = float(weights.get("road", 0.20))
+    st.session_state["suit_w_facility"] = float(weights.get("facility", 0.20))
+    st.session_state["suit_w_water"] = float(weights.get("water", 0.05))
+
+    st.session_state["suit_road_buffer_m"] = int(road_defaults.get("buffer_m", 20))
+    st.session_state["suit_road_max_distance_m"] = int(road_defaults.get("max_distance_m", 5000))
+
+    st.session_state["suit_facility_buffer_m"] = int(facility_defaults.get("buffer_m", 60))
+    st.session_state["suit_facility_max_distance_m"] = int(facility_defaults.get("max_distance_m", 10000))
+
+    st.session_state["suit_use_wdpa"] = bool(restrictive_defaults.get("use_wdpa", True))
+    st.session_state["suit_forest_buffer_m"] = int(restrictive_defaults.get("forest_buffer_m", 100))
+
+    st.session_state["show_factor_layers"] = False
+    st.session_state["planning_standard_profile_applied"] = get_standard_profile().get("profile_id")
+
+
+def render_planning_standard_profile_box(context: str = "suitability") -> None:
+    profile = get_standard_profile()
+
+    with st.expander("📘 Planning Standards Profile", expanded=False):
+        st.markdown(f"**{profile.get('profile_name_th')}**")
+        st.caption(profile.get("description", ""))
+
+        if context == "suitability":
+            st.markdown("**PSA / Residential Potential Factors ที่นำมาใช้กับโมเดล**")
+            for factor in get_psa_residential_factors()[:15]:
+                st.markdown(f"- {factor}")
+
+            st.markdown("**Community Density Reference (ตัวอย่าง)**")
+            density_ref = get_density_reference()
+            small_city = density_ref.get("เมืองขนาดเล็ก", {})
+            for key, val in small_city.items():
+                st.caption(f"{key}: {val} คน/ไร่")
+
+        elif context == "uhi":
+            st.markdown(
+                """
+                UHI ใช้เป็น climate/livability evidence layer เพื่อสนับสนุนแนวคิดเมืองน่าอยู่ 
+                เมืองสีเขียว และแผนแหล่งทรัพยากรธรรมชาติและสิ่งแวดล้อม
+                """
+            )
+
+        st.warning(
+            "Preset นี้เป็นค่าเริ่มต้นเพื่อช่วยวิเคราะห์ ไม่ใช่ข้อกำหนดกฎหมายสำเร็จรูป "
+            "ต้องตรวจสอบกับผังเมืองรวมและข้อมูลพื้นที่จริงอีกครั้ง"
+        )
+
+
+def apply_dpt_uhi_preset_to_session() -> None:
+    defaults = get_uhi_defaults()
+    today_year = date.today().year
+    analysis_year = today_year - 1 if today_year >= 2024 else 2025
+
+    st.session_state["uhi_start_date"] = date(
+        analysis_year,
+        int(defaults.get("start_month", 3)),
+        int(defaults.get("start_day", 1)),
+    )
+    st.session_state["uhi_end_date"] = date(
+        analysis_year,
+        int(defaults.get("end_month", 5)),
+        int(defaults.get("end_day", 31)),
+    )
+    st.session_state["uhi_composite_method"] = defaults.get("composite_method", "median")
+    st.session_state["uhi_risk_mode"] = defaults.get("risk_mode", "relative")
+    st.session_state["uhi_cloud_cover_max"] = int(defaults.get("cloud_cover_max", 60))
+    st.session_state["uhi_use_landsat8"] = bool(defaults.get("use_landsat8", True))
+    st.session_state["uhi_use_landsat9"] = bool(defaults.get("use_landsat9", True))
+    st.session_state["uhi_show_lst_layer"] = bool(defaults.get("show_lst_layer", True))
+    st.session_state["uhi_show_heat_risk_layer"] = bool(defaults.get("show_heat_risk_layer", True))
+    st.session_state["uhi_show_hotspot_layer"] = bool(defaults.get("show_hotspot_layer", True))
+    st.session_state["planning_standard_uhi_profile_applied"] = get_standard_profile().get("profile_id")
+
+
 # ---------------------------------------------------------
 # Suitability controls
 # ---------------------------------------------------------
@@ -722,6 +821,25 @@ def render_suitability_controls() -> dict:
 
     st.markdown("### 🧭 Suitability Analysis")
     st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
+
+    render_planning_standard_profile_box(context="suitability")
+
+    col_std_a, col_std_b = st.columns([2, 1])
+    with col_std_a:
+        apply_standard_clicked = st.button(
+            "📘 Apply DPT Standards Preset",
+            key="apply_dpt_standards_preset",
+            use_container_width=True,
+            help="ตั้งค่าน้ำหนัก/ระยะถนน/ระยะบริการ/พื้นที่กันออก ตาม standard profile",
+        )
+    with col_std_b:
+        if st.session_state.get("planning_standard_profile_applied"):
+            st.success("Applied")
+
+    if apply_standard_clicked:
+        apply_dpt_suitability_preset_to_session()
+        st.success("ใช้ค่า DPT Standards Preset แล้ว")
+        st.rerun()
 
     # ดึง Asset ID จาก Local Data Registry มาเติมเป็นค่าเริ่มต้น
     # ทำเฉพาะเมื่อ widget key ยังไม่เคยถูกสร้าง เพื่อไม่ทับค่าที่ผู้ใช้แก้เอง
@@ -761,7 +879,7 @@ def render_suitability_controls() -> dict:
         "Slope",
         0.0,
         1.0,
-        0.20,
+        0.10,
         0.05,
         key="suit_w_slope",
     )
@@ -770,7 +888,7 @@ def render_suitability_controls() -> dict:
         "Flood Risk",
         0.0,
         1.0,
-        0.25,
+        0.20,
         0.05,
         key="suit_w_flood",
     )
@@ -779,7 +897,7 @@ def render_suitability_controls() -> dict:
         "Land Cover",
         0.0,
         1.0,
-        0.25,
+        0.15,
         0.05,
         key="suit_w_landcover",
     )
@@ -788,7 +906,7 @@ def render_suitability_controls() -> dict:
         "Urbanization",
         0.0,
         1.0,
-        0.15,
+        0.10,
         0.05,
         key="suit_w_urban",
     )
@@ -806,7 +924,7 @@ def render_suitability_controls() -> dict:
         "Public Facility Proximity",
         0.0,
         1.0,
-        0.10,
+        0.20,
         0.05,
         key="suit_w_facility",
     )
@@ -815,7 +933,7 @@ def render_suitability_controls() -> dict:
         "Water Proximity",
         0.0,
         1.0,
-        0.10,
+        0.05,
         0.05,
         key="suit_w_water",
     )
@@ -965,7 +1083,7 @@ def render_suitability_controls() -> dict:
         "Buffer รอบพื้นที่คุ้มครอง (เมตร)",
         min_value=0,
         max_value=5000,
-        value=0,
+        value=100,
         step=50,
         key="suit_forest_buffer_m",
         help="ใช้เมื่อต้องการกันชนรอบป่า/พื้นที่คุ้มครอง เช่น 100–500 เมตร",

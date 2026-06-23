@@ -10,6 +10,7 @@ import streamlit as st
 from components.map_renderer import add_custom_legend
 from services.gee_service import safe_clip
 from core_engine.suitability import get_roi_geometry
+from config.planning_standards import get_standard_profile
 
 
 # ---------------------------------------------------------
