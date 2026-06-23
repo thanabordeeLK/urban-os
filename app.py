@@ -127,6 +127,7 @@ def main() -> None:
             constraint_config = suitability_config.get("constraint_config", {})
             road_config = suitability_config.get("road_config", {})
             facility_config = suitability_config.get("facility_config", {})
+            heat_config = suitability_config.get("heat_config", {})
             config_signature = json.dumps(
                 {
                     "province": selected_province,
@@ -137,6 +138,7 @@ def main() -> None:
                     "constraint_config": constraint_config,
                     "road_config": road_config,
                     "facility_config": facility_config,
+                    "heat_config": heat_config,
                 },
                 sort_keys=True,
                 ensure_ascii=False,
@@ -170,6 +172,7 @@ def main() -> None:
                 constraint_config=constraint_config,
                 road_config=road_config,
                 facility_config=facility_config,
+                heat_config=heat_config,
             )
         else:
             st.info(

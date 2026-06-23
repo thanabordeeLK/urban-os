@@ -63,6 +63,7 @@ from config.planning_standards import (
     get_public_facility_defaults,
     get_restrictive_area_defaults,
     get_uhi_defaults,
+    get_heat_penalty_defaults,
     get_density_reference,
     get_psa_residential_factors,
 )
@@ -743,7 +744,16 @@ def apply_dpt_suitability_preset_to_session() -> None:
     st.session_state["suit_w_urban"] = float(weights.get("urban", 0.10))
     st.session_state["suit_w_road"] = float(weights.get("road", 0.20))
     st.session_state["suit_w_facility"] = float(weights.get("facility", 0.20))
-    st.session_state["suit_w_water"] = float(weights.get("water", 0.05))
+    st.session_state["suit_w_water"] = float(weights.get("water", 0.04))
+    st.session_state["suit_w_heat"] = float(weights.get("heat", 0.10))
+
+    heat_defaults = get_heat_penalty_defaults()
+    st.session_state["suit_use_heat_penalty"] = bool(heat_defaults.get("enabled", False))
+    st.session_state["suit_heat_composite_method"] = heat_defaults.get("composite_method", "median")
+    st.session_state["suit_heat_risk_mode"] = heat_defaults.get("risk_mode", "relative")
+    st.session_state["suit_heat_cloud_cover_max"] = int(heat_defaults.get("cloud_cover_max", 60))
+    st.session_state["suit_heat_use_landsat8"] = bool(heat_defaults.get("use_landsat8", True))
+    st.session_state["suit_heat_use_landsat9"] = bool(heat_defaults.get("use_landsat9", True))
 
     st.session_state["suit_road_buffer_m"] = int(road_defaults.get("buffer_m", 20))
     st.session_state["suit_road_max_distance_m"] = int(road_defaults.get("max_distance_m", 5000))
@@ -893,7 +903,7 @@ def render_suitability_controls() -> dict:
         "Flood Risk",
         0.0,
         1.0,
-        0.20,
+        0.18,
         0.05,
         key="suit_w_flood",
     )
@@ -902,7 +912,7 @@ def render_suitability_controls() -> dict:
         "Land Cover",
         0.0,
         1.0,
-        0.15,
+        0.14,
         0.05,
         key="suit_w_landcover",
     )
@@ -911,7 +921,7 @@ def render_suitability_controls() -> dict:
         "Urbanization",
         0.0,
         1.0,
-        0.10,
+        0.08,
         0.05,
         key="suit_w_urban",
     )
@@ -920,7 +930,7 @@ def render_suitability_controls() -> dict:
         "Road Accessibility",
         0.0,
         1.0,
-        0.20,
+        0.18,
         0.05,
         key="suit_w_road",
     )
@@ -929,21 +939,30 @@ def render_suitability_controls() -> dict:
         "Public Facility Proximity",
         0.0,
         1.0,
-        0.20,
+        0.18,
         0.05,
         key="suit_w_facility",
+    )
+
+    w_heat = st.slider(
+        "Urban Heat Risk / UHI Penalty",
+        0.0,
+        1.0,
+        0.10,
+        0.05,
+        key="suit_w_heat",
     )
 
     w_water = st.slider(
         "Water Proximity",
         0.0,
         1.0,
-        0.05,
+        0.04,
         0.05,
         key="suit_w_water",
     )
 
-    total_weight = w_slope + w_flood + w_landcover + w_urban + w_road + w_facility + w_water
+    total_weight = w_slope + w_flood + w_landcover + w_urban + w_road + w_facility + w_heat + w_water
 
     if total_weight == 0:
         st.warning("น้ำหนักรวมเป็น 0 กรุณาเพิ่มน้ำหนักอย่างน้อย 1 ปัจจัย")
@@ -1063,6 +1082,74 @@ def render_suitability_controls() -> dict:
     else:
         st.caption("ยังไม่ใช้ Public Facility Proximity ในสมการ")
 
+
+    st.markdown("### 🌡️ Urban Heat Risk / UHI Penalty")
+    use_heat_penalty = st.checkbox(
+        "ใช้ UHI / Heat Risk เป็นปัจจัยหักคะแนนความเหมาะสม",
+        value=False,
+        key="suit_use_heat_penalty",
+        help="ใช้ Landsat LST เพื่อหักคะแนนพื้นที่ร้อนจัด เหมาะกับการวิเคราะห์เมืองน่าอยู่และ Green Infrastructure",
+    )
+
+    with st.expander("ตั้งค่า Heat Penalty", expanded=False):
+        col_hs, col_he = st.columns(2)
+
+        with col_hs:
+            heat_start_date = st.date_input(
+                "Heat start date",
+                value=date(2025, 3, 1),
+                key="suit_heat_start_date",
+            )
+
+        with col_he:
+            heat_end_date = st.date_input(
+                "Heat end date",
+                value=date(2025, 5, 31),
+                key="suit_heat_end_date",
+            )
+
+        heat_composite_method = st.selectbox(
+            "Heat composite method",
+            ["median", "mean", "max"],
+            index=0,
+            key="suit_heat_composite_method",
+            help="median เสถียรสุด, max ใช้ดูความร้อนสูงสุดแต่เสี่ยง noise",
+        )
+
+        heat_risk_mode = st.selectbox(
+            "Heat Risk Classification",
+            ["relative", "absolute"],
+            index=0,
+            key="suit_heat_risk_mode",
+            help="relative = แบ่งตาม percentile ใน ROI, absolute = แบ่งตาม °C คงที่",
+        )
+
+        heat_cloud_cover_max = st.slider(
+            "Heat cloud cover max (%)",
+            0,
+            100,
+            60,
+            5,
+            key="suit_heat_cloud_cover_max",
+        )
+
+        heat_use_landsat8 = st.checkbox(
+            "Heat source: Landsat 8",
+            value=True,
+            key="suit_heat_use_landsat8",
+        )
+
+        heat_use_landsat9 = st.checkbox(
+            "Heat source: Landsat 9",
+            value=True,
+            key="suit_heat_use_landsat9",
+        )
+
+    if use_heat_penalty:
+        st.success("เปิดใช้ Heat Penalty: พื้นที่ Heat Risk สูงจะถูกหักคะแนน")
+    else:
+        st.caption("ยังไม่ใช้ Heat Penalty ในสมการ")
+
     st.markdown("### 🌲 Protected / Forest Constraints")
     use_wdpa = st.checkbox(
         "ใช้ WDPA Protected Areas เป็นพื้นที่กันออก",
@@ -1166,6 +1253,7 @@ def render_suitability_controls() -> dict:
             "water": w_water,
             "road": w_road,
             "facility": w_facility,
+            "heat": w_heat,
         },
         "show_factor_layers": show_factor_layers,
         "constraint_config": {
@@ -1184,6 +1272,16 @@ def render_suitability_controls() -> dict:
             "asset_ids": facility_asset_ids,
             "buffer_m": facility_buffer_m,
             "max_distance_m": facility_max_distance_m,
+        },
+        "heat_config": {
+            "enabled": use_heat_penalty,
+            "start_date": str(heat_start_date),
+            "end_date": str(heat_end_date),
+            "composite_method": heat_composite_method,
+            "risk_mode": heat_risk_mode,
+            "cloud_cover_max": heat_cloud_cover_max,
+            "use_landsat8": heat_use_landsat8,
+            "use_landsat9": heat_use_landsat9,
         },
         "run_suitability": st.session_state.get("suitability_run_active", False),
         "run_clicked": run_clicked,

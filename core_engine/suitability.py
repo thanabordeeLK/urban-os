@@ -143,6 +143,7 @@ def normalize_weights(weights: dict | None) -> dict:
         "water": float(weights.get("water", 0)),
         "road": float(weights.get("road", 0)),
         "facility": float(weights.get("facility", 0)),
+        "heat": float(weights.get("heat", 0)),
     }
 
     total = sum(clean_weights.values())
@@ -595,6 +596,230 @@ def get_public_facility_proximity_score(
     return facility_score, dist_to_facility, facility_fc
 
 
+
+# ---------------------------------------------------------
+# Factor 8: Urban Heat Risk / UHI Penalty
+# ---------------------------------------------------------
+def _mask_landsat_l2_clouds_for_suitability(image: ee.Image) -> ee.Image:
+    """
+    Cloud mask สำหรับ Landsat Collection 2 Level 2 จาก QA_PIXEL
+    ใช้เฉพาะใน Suitability Heat Penalty เพื่อไม่ผูกกับโมดูล UHI โดยตรง
+    """
+
+    qa = image.select("QA_PIXEL")
+
+    fill = qa.bitwiseAnd(1 << 0).eq(0)
+    dilated_cloud = qa.bitwiseAnd(1 << 1).eq(0)
+    cirrus = qa.bitwiseAnd(1 << 2).eq(0)
+    cloud = qa.bitwiseAnd(1 << 3).eq(0)
+    cloud_shadow = qa.bitwiseAnd(1 << 4).eq(0)
+
+    mask = fill.And(dilated_cloud).And(cirrus).And(cloud).And(cloud_shadow)
+
+    try:
+        saturation_mask = image.select("QA_RADSAT").eq(0)
+        mask = mask.And(saturation_mask)
+    except Exception:
+        pass
+
+    return image.updateMask(mask)
+
+
+def _add_landsat_lst_celsius_for_suitability(image: ee.Image) -> ee.Image:
+    """
+    ST_B10 scale factor ของ Landsat Collection 2 L2:
+    Kelvin = DN * 0.00341802 + 149.0
+    Celsius = Kelvin - 273.15
+    """
+
+    lst_c = (
+        image
+        .select("ST_B10")
+        .multiply(0.00341802)
+        .add(149.0)
+        .subtract(273.15)
+        .rename("LST_C")
+    )
+
+    return image.addBands(lst_c, overwrite=True)
+
+
+def _build_landsat_lst_for_heat_penalty(
+    roi,
+    heat_config: dict,
+    is_whole_country: bool = False,
+) -> tuple[ee.Image | None, int]:
+    geometry = get_roi_geometry(roi)
+
+    start_date = str(heat_config.get("start_date", "2025-03-01"))
+    end_date = str(heat_config.get("end_date", "2025-05-31"))
+    cloud_cover_max = float(heat_config.get("cloud_cover_max", 60))
+    composite_method = str(heat_config.get("composite_method", "median"))
+    use_landsat8 = bool(heat_config.get("use_landsat8", True))
+    use_landsat9 = bool(heat_config.get("use_landsat9", True))
+
+    collections = []
+
+    if use_landsat8:
+        collections.append(
+            ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+            .filterBounds(geometry)
+            .filterDate(start_date, end_date)
+            .filter(ee.Filter.lte("CLOUD_COVER", cloud_cover_max))
+        )
+
+    if use_landsat9:
+        collections.append(
+            ee.ImageCollection("LANDSAT/LC09/C02/T1_L2")
+            .filterBounds(geometry)
+            .filterDate(start_date, end_date)
+            .filter(ee.Filter.lte("CLOUD_COVER", cloud_cover_max))
+        )
+
+    if not collections:
+        return None, 0
+
+    collection = collections[0]
+    for coll in collections[1:]:
+        collection = collection.merge(coll)
+
+    collection = (
+        collection
+        .map(_mask_landsat_l2_clouds_for_suitability)
+        .map(_add_landsat_lst_celsius_for_suitability)
+        .select("LST_C")
+    )
+
+    image_count = int(collection.size().getInfo())
+    if image_count <= 0:
+        return None, 0
+
+    if composite_method == "mean":
+        lst_c = collection.mean().rename("LST_C")
+    elif composite_method == "max":
+        lst_c = collection.max().rename("LST_C")
+    else:
+        lst_c = collection.median().rename("LST_C")
+
+    return safe_clip(lst_c, roi, is_whole_country), image_count
+
+
+def _classify_heat_risk_for_suitability(
+    lst_c: ee.Image,
+    roi,
+    heat_config: dict,
+    is_whole_country: bool = False,
+) -> ee.Image:
+    mode = str(heat_config.get("risk_mode", "relative"))
+    geometry = get_roi_geometry(roi)
+
+    if mode == "absolute":
+        heat_risk = (
+            ee.Image(1)
+            .where(lst_c.gte(28), 2)
+            .where(lst_c.gte(32), 3)
+            .where(lst_c.gte(36), 4)
+            .where(lst_c.gte(40), 5)
+            .rename("Heat_Risk_Class")
+            .toInt()
+        )
+        return safe_clip(heat_risk, roi, is_whole_country)
+
+    scale = 500 if is_whole_country else 100
+
+    percentiles = lst_c.reduceRegion(
+        reducer=ee.Reducer.percentile([20, 40, 60, 80]),
+        geometry=geometry,
+        scale=scale,
+        maxPixels=1e13,
+        bestEffort=True,
+        tileScale=4,
+    )
+
+    p20 = ee.Number(percentiles.get("LST_C_p20"))
+    p40 = ee.Number(percentiles.get("LST_C_p40"))
+    p60 = ee.Number(percentiles.get("LST_C_p60"))
+    p80 = ee.Number(percentiles.get("LST_C_p80"))
+
+    heat_risk = (
+        ee.Image(1)
+        .where(lst_c.gt(p20), 2)
+        .where(lst_c.gt(p40), 3)
+        .where(lst_c.gt(p60), 4)
+        .where(lst_c.gt(p80), 5)
+        .rename("Heat_Risk_Class")
+        .toInt()
+    )
+
+    return safe_clip(heat_risk, roi, is_whole_country)
+
+
+def get_heat_risk_suitability_score(
+    roi,
+    esa_lc: ee.Image,
+    is_whole_country: bool = False,
+    heat_config: dict | None = None,
+) -> tuple[ee.Image, ee.Image, ee.Image | None, int]:
+    """
+    แปลง Heat Risk เป็น Suitability Score:
+    - Heat Risk Class 1 = Suitability Score 5
+    - Heat Risk Class 2 = Suitability Score 4
+    - Heat Risk Class 3 = Suitability Score 3
+    - Heat Risk Class 4 = Suitability Score 2
+    - Heat Risk Class 5 = Suitability Score 1
+
+    ถ้ายังไม่เปิดใช้หรือหา Landsat LST ไม่ได้ จะคืนค่า neutral score = 3
+    """
+
+    heat_config = heat_config or {}
+    enabled = bool(heat_config.get("enabled", False))
+
+    neutral_score = ee.Image(3).rename("Urban_Heat_Risk_Suitability").toInt()
+    neutral_risk = ee.Image(3).rename("Heat_Risk_Class").toInt()
+
+    if not enabled:
+        return neutral_score, neutral_risk, None, 0
+
+    try:
+        lst_c, image_count = _build_landsat_lst_for_heat_penalty(
+            roi=roi,
+            heat_config=heat_config,
+            is_whole_country=is_whole_country,
+        )
+
+        if lst_c is None or image_count <= 0:
+            st.sidebar.warning(
+                "เปิดใช้ Heat Penalty แล้ว แต่ไม่พบภาพ Landsat LST ในช่วงเวลาที่เลือก "
+                "ระบบจึงใช้ค่า neutral score และควรลองเพิ่มช่วงวันที่หรือ cloud cover"
+            )
+            return neutral_score, neutral_risk, None, 0
+
+        heat_risk = _classify_heat_risk_for_suitability(
+            lst_c=lst_c,
+            roi=roi,
+            heat_config=heat_config,
+            is_whole_country=is_whole_country,
+        )
+
+        # Risk 1 -> score 5, Risk 5 -> score 1
+        heat_score = (
+            ee.Image(6)
+            .subtract(heat_risk)
+            .rename("Urban_Heat_Risk_Suitability")
+            .toInt()
+        )
+
+        heat_score = lock_display_projection(heat_score, esa_lc, is_whole_country)
+        heat_risk = lock_display_projection(heat_risk, esa_lc, is_whole_country)
+        lst_c = lock_display_projection(lst_c, esa_lc, is_whole_country)
+
+        return heat_score, heat_risk, lst_c, image_count
+
+    except Exception as exc:
+        st.sidebar.warning(f"คำนวณ Heat Penalty ไม่สำเร็จ ใช้ค่า neutral score แทน: {exc}")
+        return neutral_score, neutral_risk, None, 0
+
+
 # ---------------------------------------------------------
 # Hard constraint: Protected / forest reserve areas
 # ---------------------------------------------------------
@@ -685,6 +910,7 @@ def build_suitability_model(
     constraint_config: dict | None = None,
     road_config: dict | None = None,
     facility_config: dict | None = None,
+    heat_config: dict | None = None,
 ) -> dict:
     """
     สร้าง Suitability Model หลัก
@@ -702,6 +928,9 @@ def build_suitability_model(
             road_distance
             facility
             facility_distance
+            heat
+            heat_risk
+            heat_lst
             protected_constraint
             hard_restricted
     """
@@ -714,13 +943,18 @@ def build_suitability_model(
     facility_asset_ids = clean_ee_asset_ids(facility_config.get("asset_ids") or [])
     facility_enabled = bool(facility_config.get("enabled", False)) and bool(facility_asset_ids)
 
-    # ถ้ายังไม่มีข้อมูลถนน/บริการสาธารณะจริง ให้ตัด weight ออกจากสมการอัตโนมัติ
-    # ป้องกันไม่ให้คะแนนกลางจาก dummy layer ไปบิดผลวิเคราะห์
+    heat_config = heat_config or {}
+    heat_enabled = bool(heat_config.get("enabled", False))
+
+    # ถ้ายังไม่มีข้อมูลถนน/บริการสาธารณะจริง หรือยังไม่เปิด Heat Penalty
+    # ให้ตัด weight ออกจากสมการอัตโนมัติ ป้องกัน dummy/neutral layer บิดผลวิเคราะห์
     weights = dict(weights or DEFAULT_WEIGHTS.copy())
     if not road_enabled:
         weights["road"] = 0
     if not facility_enabled:
         weights["facility"] = 0
+    if not heat_enabled:
+        weights["heat"] = 0
 
     weights = normalize_weights(weights)
 
@@ -741,6 +975,12 @@ def build_suitability_model(
         is_whole_country=is_whole_country,
         facility_config=facility_config,
     )
+    heat_score, heat_risk, heat_lst, heat_image_count = get_heat_risk_suitability_score(
+        roi=roi,
+        esa_lc=esa_lc,
+        is_whole_country=is_whole_country,
+        heat_config=heat_config,
+    )
     protected_constraint, protected_fc = get_protected_area_constraint(
         roi=roi,
         is_whole_country=is_whole_country,
@@ -755,6 +995,7 @@ def build_suitability_model(
         .add(water_score.multiply(weights["water"]))
         .add(road_score.multiply(weights["road"]))
         .add(facility_score.multiply(weights["facility"]))
+        .add(heat_score.multiply(weights["heat"]))
         .rename("Suitability_Raw_Score")
     )
 
@@ -793,6 +1034,10 @@ def build_suitability_model(
     road_distance = lock_display_projection(road_distance, esa_lc, is_whole_country)
     facility_score = lock_display_projection(facility_score, esa_lc, is_whole_country)
     facility_distance = lock_display_projection(facility_distance, esa_lc, is_whole_country)
+    heat_score = lock_display_projection(heat_score, esa_lc, is_whole_country)
+    heat_risk = lock_display_projection(heat_risk, esa_lc, is_whole_country)
+    if heat_lst is not None:
+        heat_lst = lock_display_projection(heat_lst, esa_lc, is_whole_country)
     protected_constraint = lock_display_projection(protected_constraint, esa_lc, is_whole_country)
 
     final_class = safe_clip(final_class, roi, is_whole_country)
@@ -813,6 +1058,10 @@ def build_suitability_model(
         "facility": facility_score,
         "facility_distance": facility_distance,
         "facility_fc": facility_fc,
+        "heat": heat_score,
+        "heat_risk": heat_risk,
+        "heat_lst": heat_lst,
+        "heat_image_count": heat_image_count,
         "protected_constraint": protected_constraint,
         "protected_fc": protected_fc,
         "hard_restricted": hard_restricted,
@@ -958,6 +1207,7 @@ def add_suitability_layers(
     constraint_config: dict | None = None,
     road_config: dict | None = None,
     facility_config: dict | None = None,
+    heat_config: dict | None = None,
 ):
     """
     เพิ่ม Suitability Layer ลงบนแผนที่
@@ -971,6 +1221,7 @@ def add_suitability_layers(
             constraint_config=constraint_config,
             road_config=road_config,
             facility_config=facility_config,
+            heat_config=heat_config,
         )
 
         final_class = result["final_class"]
@@ -979,6 +1230,10 @@ def add_suitability_layers(
         st.session_state["suitability_final_class"] = final_class
         st.session_state["suitability_raw_score"] = result.get("raw_score")
         st.session_state["suitability_weights_normalized"] = result.get("weights")
+        st.session_state["suitability_heat_risk"] = result.get("heat_risk")
+        st.session_state["suitability_heat_score"] = result.get("heat")
+        st.session_state["suitability_heat_lst"] = result.get("heat_lst")
+        st.session_state["suitability_heat_image_count"] = result.get("heat_image_count")
 
         Map.addLayer(
             final_class,
@@ -1046,6 +1301,20 @@ def add_suitability_layers(
                 result["facility"],
                 SUITABILITY_VIS,
                 "Factor: Public Facility Proximity Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["heat"],
+                SUITABILITY_VIS,
+                "Factor: Urban Heat Risk Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["heat_risk"],
+                {"min": 1, "max": 5, "palette": ["2c7bb6", "abd9e9", "ffffbf", "fdae61", "d7191c"]},
+                "Factor: Heat Risk Class",
                 shown=False,
                 opacity=0.35,
             )

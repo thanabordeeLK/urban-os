@@ -70,6 +70,7 @@ def build_validation_notes(suitability_config: dict) -> tuple[str, list[str], li
     suitability_config = suitability_config or {}
     road_config = suitability_config.get("road_config", {}) or {}
     facility_config = suitability_config.get("facility_config", {}) or {}
+    heat_config = suitability_config.get("heat_config", {}) or {}
     constraint_config = suitability_config.get("constraint_config", {}) or {}
 
     score = 40
@@ -87,6 +88,12 @@ def build_validation_notes(suitability_config: dict) -> tuple[str, list[str], li
         strengths.append("มี Facility Asset ใช้ประเมินการเข้าถึงบริการสาธารณะ")
     else:
         gaps.append("ยังไม่มี/ยังไม่เปิดใช้ Facility Asset จึงยังประเมินการเข้าถึงบริการสาธารณะไม่เต็มรูปแบบ")
+
+    if heat_config.get("enabled"):
+        score += 10
+        strengths.append("มี Urban Heat Risk / UHI Penalty ใช้ประเมิน climate-livability")
+    else:
+        gaps.append("ยังไม่เปิดใช้ UHI / Heat Penalty จึงยังไม่ได้หักคะแนนพื้นที่ร้อนจัดใน Suitability")
 
     if constraint_config.get("use_wdpa") or constraint_config.get("asset_ids"):
         score += 20
@@ -130,6 +137,7 @@ def build_suitability_report_markdown(
     weights = (suitability_config or {}).get("weights", {}) or {}
     road_config = (suitability_config or {}).get("road_config", {}) or {}
     facility_config = (suitability_config or {}).get("facility_config", {}) or {}
+    heat_config = (suitability_config or {}).get("heat_config", {}) or {}
     constraint_config = (suitability_config or {}).get("constraint_config", {}) or {}
     confidence_level, strengths, gaps = build_validation_notes(suitability_config)
 
@@ -187,6 +195,14 @@ def build_suitability_report_markdown(
 - ระยะไกลสุดที่ใช้ประเมินบริการสาธารณะ: {facility_config.get("max_distance_m", 0)} เมตร
 
 {facility_assets_md}
+
+### Urban Heat Risk / UHI Penalty
+
+- เปิดใช้ Heat Penalty ในสมการ: {heat_config.get("enabled", False)}
+- ช่วงเวลา LST: {heat_config.get("start_date", "-")} ถึง {heat_config.get("end_date", "-")}
+- Composite: {heat_config.get("composite_method", "-")}
+- Heat Risk Mode: {heat_config.get("risk_mode", "-")}
+- Cloud cover max: {heat_config.get("cloud_cover_max", "-")}%
 
 ### Protected / Forest Constraints
 

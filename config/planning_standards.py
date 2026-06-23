@@ -45,13 +45,15 @@ DPT_STANDARD_PROFILE = {
 # - Land cover / slope / urban context เป็นปัจจัยรอง
 # - Water proximity ใช้เป็นปัจจัยสนับสนุน แต่ต้องระวังพื้นที่ริมน้ำ/น้ำท่วม
 DPT_SUITABILITY_WEIGHTS = {
+    # Step 7: เพิ่ม Urban Heat Risk เป็น climate/livability penalty
     "slope": 0.10,
-    "flood": 0.20,
-    "landcover": 0.15,
-    "urban": 0.10,
-    "road": 0.20,
-    "facility": 0.20,
-    "water": 0.05,
+    "flood": 0.18,
+    "landcover": 0.14,
+    "urban": 0.08,
+    "road": 0.18,
+    "facility": 0.18,
+    "water": 0.04,
+    "heat": 0.10,
 }
 
 
@@ -126,6 +128,28 @@ DPT_UHI_DEFAULTS = {
     "show_lst_layer": True,
     "show_heat_risk_layer": True,
     "show_hotspot_layer": True,
+}
+
+DPT_HEAT_PENALTY_DEFAULTS = {
+    # ค่าเริ่มต้นสำหรับการนำ UHI เข้า Suitability เป็น Heat Penalty
+    "enabled": False,
+    "weight": 0.10,
+    "start_month": 3,
+    "start_day": 1,
+    "end_month": 5,
+    "end_day": 31,
+    "composite_method": "median",
+    "risk_mode": "relative",
+    "cloud_cover_max": 60,
+    "use_landsat8": True,
+    "use_landsat9": True,
+    "score_logic": {
+        "Heat Risk Class 1": "Suitability Score 5",
+        "Heat Risk Class 2": "Suitability Score 4",
+        "Heat Risk Class 3": "Suitability Score 3",
+        "Heat Risk Class 4": "Suitability Score 2",
+        "Heat Risk Class 5": "Suitability Score 1",
+    },
 }
 
 
@@ -234,3 +258,7 @@ def get_density_reference() -> dict:
 
 def get_psa_residential_factors() -> list[str]:
     return list(PSA_RESIDENTIAL_POTENTIAL_FACTORS)
+
+
+def get_heat_penalty_defaults() -> dict:
+    return DPT_HEAT_PENALTY_DEFAULTS.copy()
