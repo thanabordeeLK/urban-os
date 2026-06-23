@@ -36,6 +36,7 @@ from core_engine.multi_agent import (
 )
 from core_engine.report_export import render_suitability_export_panel
 from core_engine.candidate_export import render_candidate_area_export_panel
+from core_engine.feasibility_bridge import render_feasibility_bridge_panel
 from core_engine.uhi import add_uhi_layers, render_uhi_result_panel
 
 
@@ -268,6 +269,15 @@ def main() -> None:
                 selected_province=selected_province,
                 selected_district=selected_district,
                 is_whole_country=is_whole_country,
+            )
+
+            render_feasibility_bridge_panel(
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+                suitability_summary=summary,
+                suitability_stats_df=df,
+                suitability_config=state.get("suitability_config") or {},
             )
         elif st.session_state.get("suitability_run_active", False):
             st.warning("กำลังรอผลสรุปพื้นที่จาก Google Earth Engine")

@@ -233,7 +233,7 @@ def build_suitability_report_markdown(
 3. ตรวจสอบความครบถ้วนของ Facility Asset เช่น โรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด และสถานีขนส่ง
 4. Export พื้นที่ candidate เป็น GeoJSON แล้วตรวจซ้ำใน QGIS
 5. เพิ่ม Heat Risk / UHI เพื่อประเมินความร้อนเมืองและ Green Infrastructure\n    6. จัดเก็บ Road / Facility / Forest Assets ใน Local Data Manager เพื่อให้เรียกใช้ซ้ำได้
-    6. ตรวจสอบพื้นที่ด้วยภาพถ่ายดาวเทียมความละเอียดสูงและ field survey ก่อนใช้ประกอบการตัดสินใจจริง
+    6. สร้างรายงาน Standards-Based Feasibility Bridge จาก Candidate Area และตรวจสอบพื้นที่ด้วยภาพถ่ายดาวเทียมความละเอียดสูง/field survey ก่อนใช้ประกอบการตัดสินใจจริง
 
 ---
 
