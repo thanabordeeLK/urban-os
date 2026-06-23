@@ -186,6 +186,51 @@ def classify_weighted_score(weighted_score: ee.Image) -> ee.Image:
     return score_class
 
 
+
+# ---------------------------------------------------------
+# GEE Asset ID validation
+# ---------------------------------------------------------
+def is_probable_ee_asset_id(asset_id: str) -> bool:
+    """
+    รับเฉพาะ Earth Engine Asset ID จริง เช่น
+    - projects/<project-id>/assets/<asset-name>
+    - users/<username>/<asset-name>
+
+    ไม่รับ URL จากปุ่ม Get Link ของ Code Editor เพราะ URL นั้นเป็นลิงก์แชร์สคริปต์
+    ไม่ใช่ Asset ID และจะทำให้ GEE getMapId error ตอน render
+    """
+    asset_id = str(asset_id or "").strip()
+
+    if not asset_id:
+        return False
+
+    lowered = asset_id.lower()
+
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return False
+
+    if "code.earthengine.google.com" in lowered:
+        return False
+
+    if " " in asset_id:
+        return False
+
+    return asset_id.startswith("projects/") or asset_id.startswith("users/")
+
+
+def clean_ee_asset_ids(asset_ids) -> list[str]:
+    if not asset_ids:
+        return []
+
+    cleaned = []
+    for asset_id in asset_ids:
+        asset_id = str(asset_id or "").strip()
+        if is_probable_ee_asset_id(asset_id):
+            cleaned.append(asset_id)
+
+    return list(dict.fromkeys(cleaned))
+
+
 # ---------------------------------------------------------
 # Factor 1: Slope suitability
 # ---------------------------------------------------------
@@ -394,7 +439,7 @@ def get_road_accessibility_score(
 
     road_config = road_config or {}
     enabled = bool(road_config.get("enabled", False))
-    asset_ids = road_config.get("asset_ids") or []
+    asset_ids = clean_ee_asset_ids(road_config.get("asset_ids") or [])
     buffer_m = float(road_config.get("buffer_m", 0) or 0)
     max_distance_m = float(road_config.get("max_distance_m", 5000) or 5000)
 
@@ -493,7 +538,7 @@ def get_public_facility_proximity_score(
 
     facility_config = facility_config or {}
     enabled = bool(facility_config.get("enabled", False))
-    asset_ids = facility_config.get("asset_ids") or []
+    asset_ids = clean_ee_asset_ids(facility_config.get("asset_ids") or [])
     buffer_m = float(facility_config.get("buffer_m", 60) or 60)
     max_distance_m = float(facility_config.get("max_distance_m", 10000) or 10000)
 
@@ -591,7 +636,7 @@ def get_protected_area_constraint(
 
     constraint_config = constraint_config or {}
     use_wdpa = bool(constraint_config.get("use_wdpa", True))
-    asset_ids = constraint_config.get("asset_ids") or []
+    asset_ids = clean_ee_asset_ids(constraint_config.get("asset_ids") or [])
     buffer_m = float(constraint_config.get("buffer_m", 0) or 0)
 
     collections = []
@@ -669,11 +714,11 @@ def build_suitability_model(
     """
 
     road_config = road_config or {}
-    road_asset_ids = road_config.get("asset_ids") or []
+    road_asset_ids = clean_ee_asset_ids(road_config.get("asset_ids") or [])
     road_enabled = bool(road_config.get("enabled", False)) and bool(road_asset_ids)
 
     facility_config = facility_config or {}
-    facility_asset_ids = facility_config.get("asset_ids") or []
+    facility_asset_ids = clean_ee_asset_ids(facility_config.get("asset_ids") or [])
     facility_enabled = bool(facility_config.get("enabled", False)) and bool(facility_asset_ids)
 
     # ถ้ายังไม่มีข้อมูลถนน/บริการสาธารณะจริง ให้ตัด weight ออกจากสมการอัตโนมัติ

@@ -36,6 +36,7 @@ from core_engine.multi_agent import (
 )
 from core_engine.report_export import render_suitability_export_panel
 from core_engine.candidate_export import render_candidate_area_export_panel
+from core_engine.uhi import add_uhi_layers, render_uhi_result_panel
 
 
 def render_header() -> None:
@@ -179,7 +180,18 @@ def main() -> None:
         render_suitability_methodology()
 
     # -----------------------------------------------------
-    # 8. Mode: Local Data Manager
+    # 8. Mode: Urban Heat Island
+    # -----------------------------------------------------
+    elif selected_mode == "Urban Heat Island":
+        add_uhi_layers(
+            Map=Map,
+            roi=roi,
+            is_whole_country=is_whole_country,
+            settings=state.get("uhi_settings", {}) or {},
+        )
+
+    # -----------------------------------------------------
+    # 9. Mode: Local Data Manager
     # -----------------------------------------------------
     elif selected_mode == "Local Data Manager":
         # ใช้เฉพาะ base map + boundary เพื่อให้เห็นพื้นที่อ้างอิง
@@ -258,6 +270,13 @@ def main() -> None:
             st.warning("กำลังรอผลสรุปพื้นที่จาก Google Earth Engine")
         else:
             st.info("ยังไม่มีผลวิเคราะห์ กด Run Suitability Analysis ใน Sidebar ก่อน")
+
+    elif selected_mode == "Urban Heat Island":
+        render_uhi_result_panel(
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
 
     elif selected_mode == "Local Data Manager":
         render_local_data_manager(

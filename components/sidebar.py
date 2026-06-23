@@ -1,4 +1,50 @@
+
+def _is_probable_gee_asset_id(asset_id: str) -> bool:
+    asset_id = str(asset_id or "").strip()
+    lowered = asset_id.lower()
+
+    if not asset_id:
+        return False
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return False
+    if "code.earthengine.google.com" in lowered:
+        return False
+    if " " in asset_id:
+        return False
+
+    return asset_id.startswith("projects/") or asset_id.startswith("users/")
+
+
+def _split_valid_invalid_asset_ids(text: str) -> tuple[list[str], list[str]]:
+    raw_items = [
+        item.strip()
+        for line in str(text or "").splitlines()
+        for item in line.split(",")
+        if item.strip()
+    ]
+
+    valid = [item for item in raw_items if _is_probable_gee_asset_id(item)]
+    invalid = [item for item in raw_items if not _is_probable_gee_asset_id(item)]
+
+    return list(dict.fromkeys(valid)), list(dict.fromkeys(invalid))
+
+
+def _render_invalid_asset_warning(label: str, invalid_items: list[str]) -> None:
+    if not invalid_items:
+        return
+
+    st.error(
+        f"{label}: พบค่าที่ไม่ใช่ GEE Asset ID จริง "
+        "อย่าใช้ URL จากปุ่ม Get Link ของ Code Editor ให้ใช้ path ที่ขึ้นต้นด้วย projects/.../assets/... หรือ users/..."
+    )
+
+    for item in invalid_items[:3]:
+        st.code(item, language="text")
+
+
+
 import streamlit as st
+from datetime import date
 from streamlit_option_menu import option_menu
 
 from config.settings import (
@@ -50,8 +96,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Local Data Manager", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "database", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -128,6 +174,20 @@ def render_sidebar() -> dict:
 
             suitability_config = render_suitability_controls()
 
+
+        # -------------------------------------------------
+        # Urban Heat Island Mode
+        # -------------------------------------------------
+        elif selected_mode == "Urban Heat Island":
+            st.markdown("### 🌡️ Urban Heat Island")
+
+            basemap_choice = render_basemap_selector(
+                key="uhi_basemap",
+                default="Esri Satellite",
+            )
+
+            uhi_settings = render_uhi_controls()
+
         # -------------------------------------------------
         # Local Data Manager Mode
         # -------------------------------------------------
@@ -167,6 +227,7 @@ def render_sidebar() -> dict:
         "layer_settings": layer_settings,
         "ai_settings": ai_settings,
         "suitability_config": suitability_config,
+        "uhi_settings": uhi_settings,
         "multi_agent_settings": multi_agent_settings,
     }
 
@@ -814,15 +875,13 @@ def render_suitability_controls() -> dict:
         key="suit_road_max_distance_m",
     )
 
-    road_asset_ids = [
-        item.strip()
-        for line in road_asset_text.splitlines()
-        for item in line.split(",")
-        if item.strip()
-    ]
+    road_asset_ids, invalid_road_asset_ids = _split_valid_invalid_asset_ids(road_asset_text)
+    _render_invalid_asset_warning("Road Asset ID", invalid_road_asset_ids)
 
     if use_road_accessibility and road_asset_ids:
         st.caption(f"เปิดใช้ Road Accessibility: {len(road_asset_ids)} ชั้นข้อมูล")
+    elif use_road_accessibility and invalid_road_asset_ids:
+        st.warning("เปิดใช้ถนนแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
     elif use_road_accessibility and not road_asset_ids:
         st.warning("เปิดใช้ถนนแล้ว แต่ยังไม่ได้ใส่ Road Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
     else:
@@ -869,15 +928,13 @@ def render_suitability_controls() -> dict:
         key="suit_facility_max_distance_m",
     )
 
-    facility_asset_ids = [
-        item.strip()
-        for line in facility_asset_text.splitlines()
-        for item in line.split(",")
-        if item.strip()
-    ]
+    facility_asset_ids, invalid_facility_asset_ids = _split_valid_invalid_asset_ids(facility_asset_text)
+    _render_invalid_asset_warning("Facility Asset ID", invalid_facility_asset_ids)
 
     if use_public_facilities and facility_asset_ids:
         st.caption(f"เปิดใช้ Public Facility Proximity: {len(facility_asset_ids)} ชั้นข้อมูล")
+    elif use_public_facilities and invalid_facility_asset_ids:
+        st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำเข้าคะแนน")
     elif use_public_facilities and not facility_asset_ids:
         st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ยังไม่ได้ใส่ Facility Asset ID ระบบจะยังไม่นำเข้าคะแนน")
     else:
@@ -914,12 +971,8 @@ def render_suitability_controls() -> dict:
         help="ใช้เมื่อต้องการกันชนรอบป่า/พื้นที่คุ้มครอง เช่น 100–500 เมตร",
     )
 
-    forest_asset_ids = [
-        item.strip()
-        for line in forest_asset_text.splitlines()
-        for item in line.split(",")
-        if item.strip()
-    ]
+    forest_asset_ids, invalid_forest_asset_ids = _split_valid_invalid_asset_ids(forest_asset_text)
+    _render_invalid_asset_warning("Forest / Constraint Asset ID", invalid_forest_asset_ids)
 
     if use_wdpa or forest_asset_ids:
         st.caption(
@@ -1014,6 +1067,143 @@ def render_suitability_controls() -> dict:
         "clear_clicked": clear_clicked,
     }
 
+
+
+
+# ---------------------------------------------------------
+# Urban Heat Island controls
+# ---------------------------------------------------------
+def render_uhi_controls() -> dict:
+    """
+    Sidebar controls สำหรับโหมด Urban Heat Island / Land Surface Temperature
+    """
+
+    st.caption("ดึง Landsat 8/9 LST จาก Google Earth Engine เพื่อวิเคราะห์ความร้อนผิวดิน")
+
+    with st.expander("ℹ️ UHI Method", expanded=False):
+        st.markdown(
+            """
+            - ใช้ Landsat 8/9 Collection 2 Level 2
+            - Band หลักคือ `ST_B10`
+            - แปลงเป็น Land Surface Temperature หน่วย Celsius
+            - กรองเมฆ/เงาเมฆด้วย `QA_PIXEL`
+            - Heat Risk แบบ Relative แบ่งจาก percentile ภายในพื้นที่ศึกษา
+            """
+        )
+
+    st.markdown("### 🗓️ Time Window")
+    col_start, col_end = st.columns(2)
+
+    with col_start:
+        start_date = st.date_input(
+            "Start date",
+            value=date(2025, 3, 1),
+            key="uhi_start_date",
+        )
+
+    with col_end:
+        end_date = st.date_input(
+            "End date",
+            value=date(2025, 5, 31),
+            key="uhi_end_date",
+        )
+
+    composite_method = st.selectbox(
+        "Composite method",
+        ["median", "mean", "max"],
+        index=0,
+        key="uhi_composite_method",
+        help="median เสถียรสุดสำหรับแผนที่ทั่วไป, max ใช้ดูความร้อนสูงสุดแต่เสี่ยง noise",
+    )
+
+    risk_mode = st.selectbox(
+        "Heat Risk Classification",
+        ["relative", "absolute"],
+        index=0,
+        key="uhi_risk_mode",
+        help="relative = แบ่งตาม percentile ในพื้นที่ศึกษา, absolute = แบ่งตาม °C คงที่",
+    )
+
+    cloud_cover_max = st.slider(
+        "Cloud cover max (%)",
+        0,
+        100,
+        60,
+        5,
+        key="uhi_cloud_cover_max",
+    )
+
+    st.markdown("### 🛰️ Landsat Sources")
+    use_landsat8 = st.checkbox("Landsat 8", value=True, key="uhi_use_landsat8")
+    use_landsat9 = st.checkbox("Landsat 9", value=True, key="uhi_use_landsat9")
+
+    st.markdown("### 🗺️ Display Layers")
+    show_lst_layer = st.checkbox("แสดง LST Celsius", value=True, key="uhi_show_lst_layer")
+    lst_opacity = st.slider("LST opacity", 0.0, 1.0, 0.75, 0.05, key="uhi_lst_opacity")
+
+    show_heat_risk_layer = st.checkbox("แสดง Heat Risk Class", value=True, key="uhi_show_heat_risk_layer")
+    heat_risk_opacity = st.slider("Heat Risk opacity", 0.0, 1.0, 0.72, 0.05, key="uhi_heat_risk_opacity")
+
+    show_hotspot_layer = st.checkbox("แสดง Hotspot Class 5", value=True, key="uhi_show_hotspot_layer")
+
+    calculate_stats = st.checkbox(
+        "คำนวณสถิติพื้นที่ความร้อน",
+        value=True,
+        key="uhi_calculate_stats",
+    )
+
+    col_run, col_clear = st.columns([2, 1])
+
+    with col_run:
+        run_uhi = st.button(
+            "▶️ Run UHI Analysis",
+            key="run_uhi_analysis",
+            use_container_width=True,
+        )
+
+    with col_clear:
+        clear_uhi = st.button(
+            "🧹 Clear",
+            key="clear_uhi_analysis",
+            use_container_width=True,
+        )
+
+    if clear_uhi:
+        for key in [
+            "uhi_run_active",
+            "uhi_lst_image",
+            "uhi_heat_risk_image",
+            "uhi_image_count",
+            "uhi_settings",
+            "uhi_lst_summary",
+            "uhi_heat_area_df",
+            "uhi_heat_summary",
+        ]:
+            st.session_state.pop(key, None)
+        st.success("ล้างผล UHI แล้ว")
+
+    if run_uhi:
+        st.session_state["uhi_run_active"] = True
+
+    if st.session_state.get("uhi_run_active", False):
+        st.success("UHI Result Active: ผลวิเคราะห์จะคงอยู่จนกว่าจะกด Clear")
+
+    return {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "composite_method": composite_method,
+        "risk_mode": risk_mode,
+        "cloud_cover_max": cloud_cover_max,
+        "use_landsat8": use_landsat8,
+        "use_landsat9": use_landsat9,
+        "show_lst_layer": show_lst_layer,
+        "lst_opacity": lst_opacity,
+        "show_heat_risk_layer": show_heat_risk_layer,
+        "heat_risk_opacity": heat_risk_opacity,
+        "show_hotspot_layer": show_hotspot_layer,
+        "calculate_stats": calculate_stats,
+        "run_uhi": run_uhi,
+    }
 
 
 # ---------------------------------------------------------
