@@ -82,6 +82,11 @@ BASEMAP_OPTIONS = [
 
 
 def render_sidebar() -> dict:
+    # Default state containers for all modes
+    # Prevent UnboundLocalError when returning state from modes that do not use every config group.
+    suitability_config = {}
+    multi_agent_settings = {}
+    uhi_settings = {}
     """
     แสดง UI ด้านซ้ายทั้งหมด และคืนค่าการตั้งค่าที่ผู้ใช้เลือก
 
