@@ -1113,59 +1113,61 @@ def render_suitability_controls() -> dict:
             help="ใช้ Landsat LST เพื่อหักคะแนนพื้นที่ร้อนจัด เหมาะกับการวิเคราะห์เมืองน่าอยู่และ Green Infrastructure",
         )
 
-        with st.expander("ตั้งค่า Heat Penalty", expanded=False):
-            col_hs, col_he = st.columns(2)
+        st.markdown("**ตั้งค่า Heat Penalty**")
+        st.caption("กำหนดช่วงเวลาและวิธีคำนวณ LST สำหรับนำไปหักคะแนน suitability")
 
-            with col_hs:
-                heat_start_date = st.date_input(
-                    "Heat start date",
-                    value=date(2025, 3, 1),
-                    key="suit_heat_start_date",
-                )
+        col_hs, col_he = st.columns(2)
 
-            with col_he:
-                heat_end_date = st.date_input(
-                    "Heat end date",
-                    value=date(2025, 5, 31),
-                    key="suit_heat_end_date",
-                )
-
-            heat_composite_method = st.selectbox(
-                "Heat composite method",
-                ["median", "mean", "max"],
-                index=0,
-                key="suit_heat_composite_method",
-                help="median เสถียรสุด, max ใช้ดูความร้อนสูงสุดแต่เสี่ยง noise",
+        with col_hs:
+            heat_start_date = st.date_input(
+                "Heat start date",
+                value=date(2025, 3, 1),
+                key="suit_heat_start_date",
             )
 
-            heat_risk_mode = st.selectbox(
-                "Heat Risk Classification",
-                ["relative", "absolute"],
-                index=0,
-                key="suit_heat_risk_mode",
-                help="relative = แบ่งตาม percentile ใน ROI, absolute = แบ่งตาม °C คงที่",
+        with col_he:
+            heat_end_date = st.date_input(
+                "Heat end date",
+                value=date(2025, 5, 31),
+                key="suit_heat_end_date",
             )
 
-            heat_cloud_cover_max = st.slider(
-                "Heat cloud cover max (%)",
-                0,
-                100,
-                60,
-                5,
-                key="suit_heat_cloud_cover_max",
-            )
+        heat_composite_method = st.selectbox(
+            "Heat composite method",
+            ["median", "mean", "max"],
+            index=0,
+            key="suit_heat_composite_method",
+            help="median เสถียรสุด, max ใช้ดูความร้อนสูงสุดแต่เสี่ยง noise",
+        )
 
-            heat_use_landsat8 = st.checkbox(
-                "Heat source: Landsat 8",
-                value=True,
-                key="suit_heat_use_landsat8",
-            )
+        heat_risk_mode = st.selectbox(
+            "Heat Risk Classification",
+            ["relative", "absolute"],
+            index=0,
+            key="suit_heat_risk_mode",
+            help="relative = แบ่งตาม percentile ใน ROI, absolute = แบ่งตาม °C คงที่",
+        )
 
-            heat_use_landsat9 = st.checkbox(
-                "Heat source: Landsat 9",
-                value=True,
-                key="suit_heat_use_landsat9",
-            )
+        heat_cloud_cover_max = st.slider(
+            "Heat cloud cover max (%)",
+            0,
+            100,
+            60,
+            5,
+            key="suit_heat_cloud_cover_max",
+        )
+
+        heat_use_landsat8 = st.checkbox(
+            "Heat source: Landsat 8",
+            value=True,
+            key="suit_heat_use_landsat8",
+        )
+
+        heat_use_landsat9 = st.checkbox(
+            "Heat source: Landsat 9",
+            value=True,
+            key="suit_heat_use_landsat9",
+        )
 
         if use_heat_penalty:
             st.success("เปิดใช้ Heat Penalty: พื้นที่ Heat Risk สูงจะถูกหักคะแนน")
