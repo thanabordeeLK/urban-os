@@ -113,8 +113,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Spatial Database", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "hdd-network", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Spatial Database", "System Diagnostics", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "hdd-network", "activity", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -230,6 +230,19 @@ def render_sidebar() -> dict:
             )
 
             st.caption("เชื่อม PostGIS / Supabase PostGIS / ฐานข้อมูลพื้นที่ของหน่วยงาน")
+
+        # -------------------------------------------------
+        # System Diagnostics Mode
+        # -------------------------------------------------
+        elif selected_mode == "System Diagnostics":
+            st.markdown("### 🧪 System Diagnostics")
+
+            basemap_choice = render_basemap_selector(
+                key="diagnostics_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("ตรวจสถานะระบบ แผนที่ cache และ runtime configuration")
 
         # -------------------------------------------------
         # Multi-Agent Mode

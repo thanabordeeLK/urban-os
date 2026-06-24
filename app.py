@@ -20,6 +20,7 @@ from components.map_renderer import create_base_map, add_boundary, render_map
 from components.indicator_cards import render_indicator_cards
 from components.local_data_manager import render_local_data_manager
 from components.spatial_database_connector import render_spatial_database_connector
+from components.system_diagnostics import render_system_diagnostics_panel
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -236,6 +237,13 @@ def main() -> None:
     # -----------------------------------------------------
     elif selected_mode == "Spatial Database":
         # ใช้เฉพาะ base map + boundary เพื่อให้เห็นพื้นที่อ้างอิง
+        pass
+
+    # -----------------------------------------------------
+    # 9.6 Mode: System Diagnostics
+    # -----------------------------------------------------
+    elif selected_mode == "System Diagnostics":
+        # ใช้ base map + boundary เพื่อเช็คสถานะแผนที่
         pass
 
     # -----------------------------------------------------
