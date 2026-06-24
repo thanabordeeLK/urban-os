@@ -149,6 +149,9 @@ def normalize_weights(weights: dict | None) -> dict:
         # Step 8.7.2 Phase A advanced factors
         "population_capacity": float(weights.get("population_capacity", 0)),
         "infrastructure_capacity": float(weights.get("infrastructure_capacity", 0)),
+        "service_coverage": float(weights.get("service_coverage", 0)),
+        "multi_hazard": float(weights.get("multi_hazard", 0)),
+        "socioeconomic_equity": float(weights.get("socioeconomic_equity", 0)),
         # Intentionally last: optional legal/zoning check
         "zoning_compliance": float(weights.get("zoning_compliance", 0)),
     }
@@ -1024,6 +1027,9 @@ def build_suitability_model(
     advanced_config = advanced_config or {}
     population_enabled = bool((advanced_config.get("population_capacity", {}) or {}).get("enabled", False))
     infrastructure_enabled = bool((advanced_config.get("infrastructure_capacity", {}) or {}).get("enabled", False))
+    service_enabled = bool((advanced_config.get("service_coverage", {}) or {}).get("enabled", False))
+    hazard_enabled = bool((advanced_config.get("multi_hazard", {}) or {}).get("enabled", False))
+    equity_enabled = bool((advanced_config.get("socioeconomic_equity", {}) or {}).get("enabled", False))
     zoning_enabled = bool((advanced_config.get("zoning_compliance", {}) or {}).get("enabled", False))
 
     # ถ้ายังไม่มีข้อมูลถนน/บริการสาธารณะจริง หรือยังไม่เปิด Heat Penalty
@@ -1040,6 +1046,12 @@ def build_suitability_model(
         weights["population_capacity"] = 0
     if not infrastructure_enabled:
         weights["infrastructure_capacity"] = 0
+    if not service_enabled:
+        weights["service_coverage"] = 0
+    if not hazard_enabled:
+        weights["multi_hazard"] = 0
+    if not equity_enabled:
+        weights["socioeconomic_equity"] = 0
     if not zoning_enabled:
         # อยู่ท้ายสุดของปัจจัย และไม่มีผลถ้ายังไม่ติ๊กเลือก
         weights["zoning_compliance"] = 0
@@ -1082,6 +1094,9 @@ def build_suitability_model(
     )
     population_capacity_score = advanced_scores["population_capacity"]
     infrastructure_capacity_score = advanced_scores["infrastructure_capacity"]
+    service_coverage_score = advanced_scores["service_coverage"]
+    multi_hazard_score = advanced_scores["multi_hazard"]
+    socioeconomic_equity_score = advanced_scores["socioeconomic_equity"]
     zoning_compliance_score = advanced_scores["zoning_compliance"]
     advanced_metadata = advanced_scores.get("metadata", {})
 
@@ -1096,6 +1111,9 @@ def build_suitability_model(
         .add(heat_score.multiply(weights["heat"]))
         .add(population_capacity_score.multiply(weights["population_capacity"]))
         .add(infrastructure_capacity_score.multiply(weights["infrastructure_capacity"]))
+        .add(service_coverage_score.multiply(weights["service_coverage"]))
+        .add(multi_hazard_score.multiply(weights["multi_hazard"]))
+        .add(socioeconomic_equity_score.multiply(weights["socioeconomic_equity"]))
         # Zoning / Legal Compliance intentionally applied last
         .add(zoning_compliance_score.multiply(weights["zoning_compliance"]))
         .rename("Suitability_Raw_Score")
@@ -1143,6 +1161,9 @@ def build_suitability_model(
     protected_constraint = lock_display_projection(protected_constraint, esa_lc, is_whole_country)
     population_capacity_score = lock_display_projection(population_capacity_score, esa_lc, is_whole_country)
     infrastructure_capacity_score = lock_display_projection(infrastructure_capacity_score, esa_lc, is_whole_country)
+    service_coverage_score = lock_display_projection(service_coverage_score, esa_lc, is_whole_country)
+    multi_hazard_score = lock_display_projection(multi_hazard_score, esa_lc, is_whole_country)
+    socioeconomic_equity_score = lock_display_projection(socioeconomic_equity_score, esa_lc, is_whole_country)
     zoning_compliance_score = lock_display_projection(zoning_compliance_score, esa_lc, is_whole_country)
 
     final_class = safe_clip(final_class, roi, is_whole_country)
@@ -1169,6 +1190,9 @@ def build_suitability_model(
         "heat_image_count": heat_image_count,
         "population_capacity": population_capacity_score,
         "infrastructure_capacity": infrastructure_capacity_score,
+        "service_coverage": service_coverage_score,
+        "multi_hazard": multi_hazard_score,
+        "socioeconomic_equity": socioeconomic_equity_score,
         "zoning_compliance": zoning_compliance_score,
         "advanced_metadata": advanced_metadata,
         "protected_constraint": protected_constraint,
@@ -1443,6 +1467,27 @@ def add_suitability_layers(
                 result["infrastructure_capacity"],
                 SUITABILITY_VIS,
                 "Factor: Infrastructure Capacity Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["service_coverage"],
+                SUITABILITY_VIS,
+                "Factor: Service Coverage Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["multi_hazard"],
+                SUITABILITY_VIS,
+                "Factor: Multi-Hazard Safety Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["socioeconomic_equity"],
+                SUITABILITY_VIS,
+                "Factor: Socioeconomic / Equity Suitability",
                 shown=False,
                 opacity=0.35,
             )

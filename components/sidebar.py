@@ -938,6 +938,33 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
     infra_solid_waste = 3
     infra_drainage = 3
 
+    use_service_coverage = False
+    w_service_coverage = 0.0
+    svc_health = 3
+    svc_education = 3
+    svc_park = 3
+    svc_market = 3
+    svc_police = 3
+    svc_fire = 3
+    svc_transport = 3
+
+    use_multi_hazard = False
+    w_multi_hazard = 0.0
+    hazard_flood = 3
+    hazard_landslide = 3
+    hazard_erosion = 3
+    hazard_wildfire = 3
+    hazard_earthquake = 3
+    hazard_stormwater = 3
+
+    use_socioeconomic_equity = False
+    w_socioeconomic_equity = 0.0
+    equity_access = 3
+    equity_benefit = 3
+    equity_vulnerable = 3
+    equity_land_tenure = 3
+    equity_displacement = 3
+
     use_zoning_compliance = False
     w_zoning_compliance = 0.0
     zoning_level = "neutral"
@@ -1482,8 +1509,93 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                 infra_avg = (infra_water + infra_wastewater + infra_electricity + infra_solid_waste + infra_drainage) / 5
                 st.metric("Infrastructure score", f"{infra_avg:.1f}/5")
 
+        st.markdown("#### 3) Service Coverage by Type")
+        use_service_coverage = st.checkbox(
+            "ใช้ Service Coverage แยกประเภทบริการ เป็นปัจจัยคะแนน",
+            value=False,
+            key="suit_use_service_coverage",
+        )
+        w_service_coverage = st.slider(
+            "น้ำหนัก Service Coverage",
+            0.0,
+            1.0,
+            0.10,
+            0.05,
+            key="suit_w_service_coverage",
+            disabled=not use_service_coverage,
+        )
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            svc_health = st.slider("สาธารณสุข", 1, 5, 3, key="suit_svc_health", disabled=not use_service_coverage)
+            svc_education = st.slider("การศึกษา", 1, 5, 3, key="suit_svc_education", disabled=not use_service_coverage)
+            svc_park = st.slider("สวนสาธารณะ/นันทนาการ", 1, 5, 3, key="suit_svc_park", disabled=not use_service_coverage)
+            svc_market = st.slider("ตลาด/พาณิชยกรรมชุมชน", 1, 5, 3, key="suit_svc_market", disabled=not use_service_coverage)
+        with col_s2:
+            svc_police = st.slider("ตำรวจ/ความปลอดภัย", 1, 5, 3, key="suit_svc_police", disabled=not use_service_coverage)
+            svc_fire = st.slider("ดับเพลิง/ฉุกเฉิน", 1, 5, 3, key="suit_svc_fire", disabled=not use_service_coverage)
+            svc_transport = st.slider("ขนส่งสาธารณะ/สถานี", 1, 5, 3, key="suit_svc_transport", disabled=not use_service_coverage)
+            if use_service_coverage:
+                svc_avg = (svc_health + svc_education + svc_park + svc_market + svc_police + svc_fire + svc_transport) / 7
+                st.metric("Service coverage score", f"{svc_avg:.1f}/5")
+
+        st.markdown("#### 4) Multi-Hazard Safety")
+        use_multi_hazard = st.checkbox(
+            "ใช้ Multi-Hazard Safety เป็นปัจจัยคะแนน",
+            value=False,
+            key="suit_use_multi_hazard",
+            help="ผู้ใช้กรอกระดับความเสี่ยง 1-5 ระบบจะแปลงเป็น suitability แบบกลับด้าน",
+        )
+        w_multi_hazard = st.slider(
+            "น้ำหนัก Multi-Hazard Safety",
+            0.0,
+            1.0,
+            0.12,
+            0.05,
+            key="suit_w_multi_hazard",
+            disabled=not use_multi_hazard,
+        )
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            hazard_flood = st.slider("น้ำท่วม", 1, 5, 3, key="suit_hazard_flood", disabled=not use_multi_hazard)
+            hazard_landslide = st.slider("ดินถล่ม", 1, 5, 3, key="suit_hazard_landslide", disabled=not use_multi_hazard)
+            hazard_erosion = st.slider("กัดเซาะ/พังทลาย", 1, 5, 3, key="suit_hazard_erosion", disabled=not use_multi_hazard)
+        with col_h2:
+            hazard_wildfire = st.slider("ไฟป่า/หมอกควัน", 1, 5, 3, key="suit_hazard_wildfire", disabled=not use_multi_hazard)
+            hazard_earthquake = st.slider("แผ่นดินไหว/รอยเลื่อน", 1, 5, 3, key="suit_hazard_earthquake", disabled=not use_multi_hazard)
+            hazard_stormwater = st.slider("น้ำหลาก/ระบายน้ำไม่ทัน", 1, 5, 3, key="suit_hazard_stormwater", disabled=not use_multi_hazard)
+            if use_multi_hazard:
+                avg_risk = (hazard_flood + hazard_landslide + hazard_erosion + hazard_wildfire + hazard_earthquake + hazard_stormwater) / 6
+                st.metric("Hazard safety score", f"{6 - avg_risk:.1f}/5")
+
+        st.markdown("#### 5) Socioeconomic / Equity")
+        use_socioeconomic_equity = st.checkbox(
+            "ใช้ Socioeconomic / Equity เป็นปัจจัยคะแนน",
+            value=False,
+            key="suit_use_socioeconomic_equity",
+        )
+        w_socioeconomic_equity = st.slider(
+            "น้ำหนัก Socioeconomic / Equity",
+            0.0,
+            1.0,
+            0.08,
+            0.05,
+            key="suit_w_socioeconomic_equity",
+            disabled=not use_socioeconomic_equity,
+        )
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            equity_access = st.slider("แก้ปัญหาการเข้าถึงบริการ", 1, 5, 3, key="suit_equity_access", disabled=not use_socioeconomic_equity)
+            equity_benefit = st.slider("ประโยชน์ต่อชุมชน", 1, 5, 3, key="suit_equity_benefit", disabled=not use_socioeconomic_equity)
+            equity_vulnerable = st.slider("ช่วยกลุ่มเปราะบาง/รายได้น้อย", 1, 5, 3, key="suit_equity_vulnerable", disabled=not use_socioeconomic_equity)
+        with col_e2:
+            equity_land_tenure = st.slider("ความพร้อมด้านกรรมสิทธิ์/ที่ดิน", 1, 5, 3, key="suit_equity_land_tenure", disabled=not use_socioeconomic_equity)
+            equity_displacement = st.slider("ลดความเสี่ยงย้ายถิ่น/ผลกระทบชุมชน", 1, 5, 3, key="suit_equity_displacement", disabled=not use_socioeconomic_equity)
+            if use_socioeconomic_equity:
+                equity_avg = (equity_access + equity_benefit + equity_vulnerable + equity_land_tenure + equity_displacement) / 5
+                st.metric("Equity score", f"{equity_avg:.1f}/5")
+
         st.markdown("---")
-        st.markdown("#### 3) Zoning / Legal Compliance — ปัจจัยท้ายสุด")
+        st.markdown("#### 6) Zoning / Legal Compliance — ปัจจัยท้ายสุด")
         st.caption(
             "ตั้งใจวางไว้ท้ายสุดเพื่อเปรียบเทียบผลก่อน/หลังเปิดข้อจำกัดผังสีหรือข้อกฎหมาย "
             "ถ้ายังไม่ติ๊กเลือก จะไม่มีผลต่อคะแนนและ final class"
@@ -1595,6 +1707,9 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             "heat": w_heat,
             "population_capacity": w_population_capacity if use_population_capacity else 0,
             "infrastructure_capacity": w_infrastructure_capacity if use_infrastructure_capacity else 0,
+            "service_coverage": w_service_coverage if use_service_coverage else 0,
+            "multi_hazard": w_multi_hazard if use_multi_hazard else 0,
+            "socioeconomic_equity": w_socioeconomic_equity if use_socioeconomic_equity else 0,
             # Zoning / Legal Compliance intentionally stays last
             "zoning_compliance": w_zoning_compliance if use_zoning_compliance else 0,
         },
@@ -1651,6 +1766,39 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                     "electricity": infra_electricity,
                     "solid_waste": infra_solid_waste,
                     "drainage": infra_drainage,
+                },
+            },
+            "service_coverage": {
+                "enabled": use_service_coverage,
+                "scores": {
+                    "health": svc_health,
+                    "education": svc_education,
+                    "park": svc_park,
+                    "market": svc_market,
+                    "police": svc_police,
+                    "fire": svc_fire,
+                    "transport": svc_transport,
+                },
+            },
+            "multi_hazard": {
+                "enabled": use_multi_hazard,
+                "risks": {
+                    "flood": hazard_flood,
+                    "landslide": hazard_landslide,
+                    "erosion": hazard_erosion,
+                    "wildfire": hazard_wildfire,
+                    "earthquake": hazard_earthquake,
+                    "stormwater": hazard_stormwater,
+                },
+            },
+            "socioeconomic_equity": {
+                "enabled": use_socioeconomic_equity,
+                "scores": {
+                    "access_equity": equity_access,
+                    "community_benefit": equity_benefit,
+                    "vulnerable_priority": equity_vulnerable,
+                    "land_tenure_readiness": equity_land_tenure,
+                    "displacement_safety": equity_displacement,
                 },
             },
             "zoning_compliance": {

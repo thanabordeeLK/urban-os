@@ -87,6 +87,45 @@ def score_zoning_compliance(level: str = "neutral") -> float:
     return mapping.get(level, 3.0)
 
 
+def score_service_coverage(scores: dict | None = None) -> float:
+    """
+    Service Coverage Score by Type.
+    Components may include health, education, park, market, police, fire, transport.
+    """
+
+    scores = scores or {}
+    keys = ["health", "education", "park", "market", "police", "fire", "transport"]
+    values = [_clamp_score(scores.get(key, 3.0), default=3.0) for key in keys]
+    return round(sum(values) / len(values), 2)
+
+
+def score_multi_hazard_safety(risks: dict | None = None) -> float:
+    """
+    Multi-Hazard Safety Score.
+    User inputs risk levels 1-5. Suitability is inverted:
+    risk 1 = suitability 5, risk 5 = suitability 1.
+    """
+
+    risks = risks or {}
+    keys = ["flood", "landslide", "erosion", "wildfire", "earthquake", "stormwater"]
+    risk_values = [_clamp_score(risks.get(key, 3.0), default=3.0) for key in keys]
+    avg_risk = sum(risk_values) / len(risk_values)
+    return round(6.0 - avg_risk, 2)
+
+
+def score_socioeconomic_equity(scores: dict | None = None) -> float:
+    """
+    Socioeconomic / Equity Score.
+    A higher score means the area is more appropriate or higher priority from
+    equity, community benefit, and access-improvement perspectives.
+    """
+
+    scores = scores or {}
+    keys = ["access_equity", "community_benefit", "vulnerable_priority", "land_tenure_readiness", "displacement_safety"]
+    values = [_clamp_score(scores.get(key, 3.0), default=3.0) for key in keys]
+    return round(sum(values) / len(values), 2)
+
+
 def constant_score_image(score: float, name: str, roi=None, is_whole_country: bool = False) -> ee.Image:
     image = ee.Image(_clamp_score(score)).rename(name).toFloat()
     if roi is not None:
@@ -114,6 +153,9 @@ def get_advanced_planning_scores(
 
     pop_cfg = cfg.get("population_capacity", {}) or {}
     infra_cfg = cfg.get("infrastructure_capacity", {}) or {}
+    service_cfg = cfg.get("service_coverage", {}) or {}
+    hazard_cfg = cfg.get("multi_hazard", {}) or {}
+    equity_cfg = cfg.get("socioeconomic_equity", {}) or {}
     zoning_cfg = cfg.get("zoning_compliance", {}) or {}
 
     pop_score_value = score_population_capacity(
@@ -123,6 +165,18 @@ def get_advanced_planning_scores(
 
     infra_score_value = score_infrastructure_capacity(
         scores=infra_cfg.get("scores", {}) or {}
+    )
+
+    service_score_value = score_service_coverage(
+        scores=service_cfg.get("scores", {}) or {}
+    )
+
+    hazard_score_value = score_multi_hazard_safety(
+        risks=hazard_cfg.get("risks", {}) or {}
+    )
+
+    equity_score_value = score_socioeconomic_equity(
+        scores=equity_cfg.get("scores", {}) or {}
     )
 
     zoning_score_value = score_zoning_compliance(
@@ -142,6 +196,24 @@ def get_advanced_planning_scores(
             roi=roi,
             is_whole_country=is_whole_country,
         ),
+        "service_coverage": constant_score_image(
+            service_score_value,
+            "Service_Coverage_Suitability",
+            roi=roi,
+            is_whole_country=is_whole_country,
+        ),
+        "multi_hazard": constant_score_image(
+            hazard_score_value,
+            "Multi_Hazard_Safety_Suitability",
+            roi=roi,
+            is_whole_country=is_whole_country,
+        ),
+        "socioeconomic_equity": constant_score_image(
+            equity_score_value,
+            "Socioeconomic_Equity_Suitability",
+            roi=roi,
+            is_whole_country=is_whole_country,
+        ),
         "zoning_compliance": constant_score_image(
             zoning_score_value,
             "Zoning_Legal_Compliance_Suitability",
@@ -151,9 +223,15 @@ def get_advanced_planning_scores(
         "metadata": {
             "population_score": pop_score_value,
             "infrastructure_score": infra_score_value,
+            "service_coverage_score": service_score_value,
+            "multi_hazard_safety_score": hazard_score_value,
+            "socioeconomic_equity_score": equity_score_value,
             "zoning_score": zoning_score_value,
             "population_enabled": bool(pop_cfg.get("enabled", False)),
             "infrastructure_enabled": bool(infra_cfg.get("enabled", False)),
+            "service_coverage_enabled": bool(service_cfg.get("enabled", False)),
+            "multi_hazard_enabled": bool(hazard_cfg.get("enabled", False)),
+            "socioeconomic_equity_enabled": bool(equity_cfg.get("enabled", False)),
             "zoning_enabled": bool(zoning_cfg.get("enabled", False)),
             "note": (
                 "Zoning / Legal Compliance is intentionally optional. "
