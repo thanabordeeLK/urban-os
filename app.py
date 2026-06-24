@@ -19,6 +19,7 @@ from components.sidebar import render_sidebar
 from components.map_renderer import create_base_map, add_boundary, render_map
 from components.indicator_cards import render_indicator_cards
 from components.local_data_manager import render_local_data_manager
+from components.spatial_database_connector import render_spatial_database_connector
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -202,7 +203,14 @@ def main() -> None:
         pass
 
     # -----------------------------------------------------
-    # 9. Mode: Multi-Agent
+    # 9.5 Mode: Spatial Database
+    # -----------------------------------------------------
+    elif selected_mode == "Spatial Database":
+        # ใช้เฉพาะ base map + boundary เพื่อให้เห็นพื้นที่อ้างอิง
+        pass
+
+    # -----------------------------------------------------
+    # 10. Mode: Multi-Agent
     # -----------------------------------------------------
     elif selected_mode == "Multi-Agent":
         add_multi_agent_evidence_layers(

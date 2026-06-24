@@ -56,6 +56,7 @@ from config.settings import (
 )
 from services.roi_service import get_provinces, get_districts, get_roi
 from components.local_data_manager import get_registry_asset_ids_by_category
+from components.spatial_database_connector import get_spatial_db_layers_by_category
 from config.planning_standards import (
     get_standard_profile,
     get_suitability_weight_preset,
@@ -112,8 +113,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Spatial Database", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "hdd-network", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -216,6 +217,19 @@ def render_sidebar() -> dict:
             )
 
             st.caption("จัดการ GEE Asset ID และข้อมูลเฉพาะพื้นที่ แล้วนำไปใช้กับ Suitability Analysis")
+
+        # -------------------------------------------------
+        # Spatial Database Mode
+        # -------------------------------------------------
+        elif selected_mode == "Spatial Database":
+            st.markdown("### 🗄️ Spatial Database")
+
+            basemap_choice = render_basemap_selector(
+                key="spatial_db_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("เชื่อม PostGIS / Supabase PostGIS / ฐานข้อมูลพื้นที่ของหน่วยงาน")
 
         # -------------------------------------------------
         # Multi-Agent Mode
@@ -875,6 +889,22 @@ def render_suitability_controls() -> dict:
         if registry_forests:
             st.session_state["suit_forest_asset_ids"] = "\n".join(registry_forests)
 
+    # ดึงชั้นข้อมูลจาก Spatial DB Registry มาเป็นตัวเลือก
+    spatial_db_roads = get_spatial_db_layers_by_category("roads")
+    spatial_db_facilities = get_spatial_db_layers_by_category("public_facilities")
+    spatial_db_protected = get_spatial_db_layers_by_category("protected_forest")
+
+    if spatial_db_roads and "suit_road_source_type" not in st.session_state:
+        st.session_state["suit_road_source_type"] = "PostGIS table"
+        st.session_state["suit_use_road_accessibility"] = True
+
+    if spatial_db_facilities and "suit_facility_source_type" not in st.session_state:
+        st.session_state["suit_facility_source_type"] = "PostGIS table"
+        st.session_state["suit_use_public_facilities"] = True
+
+    if spatial_db_protected and "suit_constraint_source_type" not in st.session_state:
+        st.session_state["suit_constraint_source_type"] = "PostGIS table"
+
 
     with st.expander("ℹ️ คำอธิบายปัจจัย", expanded=False):
         st.markdown(
@@ -1002,7 +1032,57 @@ def render_suitability_controls() -> dict:
             "ใช้ชั้นข้อมูลถนนเป็นปัจจัยวิเคราะห์",
             value=False,
             key="suit_use_road_accessibility",
-            help="ต้องใส่ GEE Asset ID ของถนนก่อน ระบบจึงจะนำถนนเข้าคำนวณ",
+            help="เลือกได้ว่าจะใช้ GEE Asset ID หรือ PostGIS table จากฐานข้อมูลของหน่วยงาน",
+        )
+
+        road_source_type_label = st.selectbox(
+            "แหล่งข้อมูลถนน",
+            ["GEE Asset ID", "PostGIS table"],
+            index=0,
+            key="suit_road_source_type",
+        )
+
+        road_db_layer_options = ["Manual table"] + [item.get("layer_name", "") for item in spatial_db_roads]
+        road_db_layer_name = st.selectbox(
+            "เลือก Road layer จาก Spatial DB Registry",
+            road_db_layer_options,
+            index=0,
+            key="suit_road_db_layer_name",
+            disabled=(road_source_type_label != "PostGIS table"),
+        )
+
+        selected_road_db = next(
+            (item for item in spatial_db_roads if item.get("layer_name") == road_db_layer_name),
+            {},
+        )
+
+        road_db_table = st.text_input(
+            "PostGIS road table",
+            value=selected_road_db.get("table_name", "public.roads"),
+            key="suit_road_db_table",
+            disabled=(road_source_type_label != "PostGIS table"),
+        )
+        road_db_geom_col = st.text_input(
+            "Road geometry column",
+            value=selected_road_db.get("geom_col", "geom"),
+            key="suit_road_db_geom_col",
+            disabled=(road_source_type_label != "PostGIS table"),
+        )
+        road_db_where = st.text_input(
+            "Road filter SQL",
+            value=selected_road_db.get("where_sql", ""),
+            key="suit_road_db_where",
+            disabled=(road_source_type_label != "PostGIS table"),
+            placeholder="เช่น road_class IN ('primary','secondary')",
+        )
+        road_db_limit = st.number_input(
+            "Road feature limit",
+            min_value=1,
+            max_value=50000,
+            value=int(selected_road_db.get("limit", 5000) or 5000),
+            step=500,
+            key="suit_road_db_limit",
+            disabled=(road_source_type_label != "PostGIS table"),
         )
 
         road_asset_text = st.text_area(
@@ -1040,7 +1120,9 @@ def render_suitability_controls() -> dict:
         road_asset_ids, invalid_road_asset_ids = _split_valid_invalid_asset_ids(road_asset_text)
         _render_invalid_asset_warning("Road Asset ID", invalid_road_asset_ids)
 
-        if use_road_accessibility and road_asset_ids:
+        if use_road_accessibility and road_source_type_label == "PostGIS table":
+            st.caption(f"เปิดใช้ Road Accessibility จาก PostGIS table: {road_db_table}")
+        elif use_road_accessibility and road_asset_ids:
             st.caption(f"เปิดใช้ Road Accessibility: {len(road_asset_ids)} ชั้นข้อมูล")
         elif use_road_accessibility and invalid_road_asset_ids:
             st.warning("เปิดใช้ถนนแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำถนนเข้าคะแนน")
@@ -1056,7 +1138,57 @@ def render_suitability_controls() -> dict:
             "ใช้ชั้นข้อมูลบริการสาธารณะเป็นปัจจัยวิเคราะห์",
             value=False,
             key="suit_use_public_facilities",
-            help="ใช้กับ GEE Asset ID ของโรงพยาบาล โรงเรียน ศูนย์ราชการ ตลาด สถานีขนส่ง หรือจุดบริการเมือง",
+            help="เลือกได้ว่าจะใช้ GEE Asset ID หรือ PostGIS table จากฐานข้อมูลของหน่วยงาน",
+        )
+
+        facility_source_type_label = st.selectbox(
+            "แหล่งข้อมูลบริการสาธารณะ",
+            ["GEE Asset ID", "PostGIS table"],
+            index=0,
+            key="suit_facility_source_type",
+        )
+
+        facility_db_layer_options = ["Manual table"] + [item.get("layer_name", "") for item in spatial_db_facilities]
+        facility_db_layer_name = st.selectbox(
+            "เลือก Facility layer จาก Spatial DB Registry",
+            facility_db_layer_options,
+            index=0,
+            key="suit_facility_db_layer_name",
+            disabled=(facility_source_type_label != "PostGIS table"),
+        )
+
+        selected_facility_db = next(
+            (item for item in spatial_db_facilities if item.get("layer_name") == facility_db_layer_name),
+            {},
+        )
+
+        facility_db_table = st.text_input(
+            "PostGIS facility table",
+            value=selected_facility_db.get("table_name", "public.public_facilities"),
+            key="suit_facility_db_table",
+            disabled=(facility_source_type_label != "PostGIS table"),
+        )
+        facility_db_geom_col = st.text_input(
+            "Facility geometry column",
+            value=selected_facility_db.get("geom_col", "geom"),
+            key="suit_facility_db_geom_col",
+            disabled=(facility_source_type_label != "PostGIS table"),
+        )
+        facility_db_where = st.text_input(
+            "Facility filter SQL",
+            value=selected_facility_db.get("where_sql", ""),
+            key="suit_facility_db_where",
+            disabled=(facility_source_type_label != "PostGIS table"),
+            placeholder="เช่น facility_type IN ('hospital','school','market')",
+        )
+        facility_db_limit = st.number_input(
+            "Facility feature limit",
+            min_value=1,
+            max_value=50000,
+            value=int(selected_facility_db.get("limit", 5000) or 5000),
+            step=500,
+            key="suit_facility_db_limit",
+            disabled=(facility_source_type_label != "PostGIS table"),
         )
 
         facility_asset_text = st.text_area(
@@ -1094,7 +1226,9 @@ def render_suitability_controls() -> dict:
         facility_asset_ids, invalid_facility_asset_ids = _split_valid_invalid_asset_ids(facility_asset_text)
         _render_invalid_asset_warning("Facility Asset ID", invalid_facility_asset_ids)
 
-        if use_public_facilities and facility_asset_ids:
+        if use_public_facilities and facility_source_type_label == "PostGIS table":
+            st.caption(f"เปิดใช้ Public Facility Proximity จาก PostGIS table: {facility_db_table}")
+        elif use_public_facilities and facility_asset_ids:
             st.caption(f"เปิดใช้ Public Facility Proximity: {len(facility_asset_ids)} ชั้นข้อมูล")
         elif use_public_facilities and invalid_facility_asset_ids:
             st.warning("เปิดใช้บริการสาธารณะแล้ว แต่ค่าที่ใส่ไม่ใช่ Asset ID ระบบจะยังไม่นำเข้าคะแนน")
@@ -1286,18 +1420,39 @@ def render_suitability_controls() -> dict:
             "use_wdpa": use_wdpa,
             "asset_ids": forest_asset_ids,
             "buffer_m": forest_buffer_m,
+            "source_type": "postgis" if constraint_source_type_label == "PostGIS table" else "gee_asset",
+            "db_config": {
+                "table_name": protected_db_table,
+                "geom_col": protected_db_geom_col,
+                "where_sql": protected_db_where,
+                "limit": protected_db_limit,
+            },
         },
         "road_config": {
             "enabled": use_road_accessibility,
             "asset_ids": road_asset_ids,
             "buffer_m": road_buffer_m,
             "max_distance_m": road_max_distance_m,
+            "source_type": "postgis" if road_source_type_label == "PostGIS table" else "gee_asset",
+            "db_config": {
+                "table_name": road_db_table,
+                "geom_col": road_db_geom_col,
+                "where_sql": road_db_where,
+                "limit": road_db_limit,
+            },
         },
         "facility_config": {
             "enabled": use_public_facilities,
             "asset_ids": facility_asset_ids,
             "buffer_m": facility_buffer_m,
             "max_distance_m": facility_max_distance_m,
+            "source_type": "postgis" if facility_source_type_label == "PostGIS table" else "gee_asset",
+            "db_config": {
+                "table_name": facility_db_table,
+                "geom_col": facility_db_geom_col,
+                "where_sql": facility_db_where,
+                "limit": facility_db_limit,
+            },
         },
         "heat_config": {
             "enabled": use_heat_penalty,

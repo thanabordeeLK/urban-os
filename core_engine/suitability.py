@@ -5,6 +5,7 @@ import pandas as pd
 from config.datasets import DATASET_CATALOG
 from components.map_renderer import add_custom_legend
 from services.gee_service import safe_clip
+from services.spatial_db_service import fetch_postgis_as_ee_feature_collection
 from config.planning_standards import get_suitability_weight_preset
 
 
@@ -433,32 +434,21 @@ def get_road_accessibility_score(
 
     road_config = road_config or {}
     enabled = bool(road_config.get("enabled", False))
-    asset_ids = clean_ee_asset_ids(road_config.get("asset_ids") or [])
     buffer_m = float(road_config.get("buffer_m", 0) or 0)
     max_distance_m = float(road_config.get("max_distance_m", 5000) or 5000)
 
-    collections = []
-
-    if enabled:
-        for asset_id in asset_ids:
-            asset_id = str(asset_id).strip()
-            if not asset_id:
-                continue
-
-            try:
-                fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
-                if buffer_m > 0:
-                    fc = fc.map(lambda f: f.buffer(buffer_m))
-                collections.append(fc)
-            except Exception:
-                # ให้ GEE จัดการ error ตอน render/evaluate แทนการทำให้ Streamlit ล้มทันที
-                pass
+    collections, has_valid_source, source_meta = _get_feature_collections_from_config(
+        roi=roi,
+        config=road_config,
+        buffer_m=buffer_m,
+        source_label="Road Accessibility",
+    )
 
     road_fc = _merge_feature_collections(collections)
 
-    # ไม่มี road asset: คืน score กลางกับ mask ว่าง เพื่อให้ระบบยังรันได้
-    # build_suitability_model จะตั้ง road weight เป็น 0 อัตโนมัติเมื่อไม่มี asset
-    if not enabled or not asset_ids:
+    # ไม่มี road source: คืน score กลางกับ mask ว่าง เพื่อให้ระบบยังรันได้
+    # build_suitability_model จะตั้ง road weight เป็น 0 อัตโนมัติเมื่อไม่มี source
+    if not enabled or not has_valid_source:
         neutral_score = ee.Image(3).rename("Road_Accessibility_Suitability").toInt()
         empty_distance = ee.Image(max_distance_m).rename("Distance_To_Road_Meter")
         return neutral_score, empty_distance, road_fc
@@ -532,30 +522,19 @@ def get_public_facility_proximity_score(
 
     facility_config = facility_config or {}
     enabled = bool(facility_config.get("enabled", False))
-    asset_ids = clean_ee_asset_ids(facility_config.get("asset_ids") or [])
     buffer_m = float(facility_config.get("buffer_m", 60) or 60)
     max_distance_m = float(facility_config.get("max_distance_m", 10000) or 10000)
 
-    collections = []
-
-    if enabled:
-        for asset_id in asset_ids:
-            asset_id = str(asset_id).strip()
-            if not asset_id:
-                continue
-
-            try:
-                fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
-                if buffer_m > 0:
-                    # buffer จุด/เส้น/พื้นที่ให้ rasterize ชัดขึ้น
-                    fc = fc.map(lambda f: f.buffer(buffer_m))
-                collections.append(fc)
-            except Exception:
-                pass
+    collections, has_valid_source, source_meta = _get_feature_collections_from_config(
+        roi=roi,
+        config=facility_config,
+        buffer_m=buffer_m,
+        source_label="Public Facility Proximity",
+    )
 
     facility_fc = _merge_feature_collections(collections)
 
-    if not enabled or not asset_ids:
+    if not enabled or not has_valid_source:
         neutral_score = ee.Image(3).rename("Public_Facility_Proximity_Suitability").toInt()
         empty_distance = ee.Image(max_distance_m).rename("Distance_To_Public_Facility_Meter")
         return neutral_score, empty_distance, facility_fc
@@ -869,17 +848,28 @@ def get_protected_area_constraint(
         except Exception:
             pass
 
-    for asset_id in asset_ids:
-        asset_id = str(asset_id).strip()
-        if not asset_id:
-            continue
+    source_type = str(constraint_config.get("source_type", "gee_asset") or "gee_asset")
 
-        try:
-            fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
-            collections.append(fc)
-        except Exception:
-            # ปล่อยให้ GEE raise ตอน evaluate/render ดีกว่าไม่ให้แอปล้มตั้งแต่สร้าง object
-            pass
+    if source_type == "postgis":
+        db_collections, has_db_source, source_meta = _get_feature_collections_from_config(
+            roi=roi,
+            config=constraint_config,
+            buffer_m=0,
+            source_label="Protected / Forest Constraint",
+        )
+        collections.extend(db_collections)
+    else:
+        for asset_id in asset_ids:
+            asset_id = str(asset_id).strip()
+            if not asset_id:
+                continue
+
+            try:
+                fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
+                collections.append(fc)
+            except Exception:
+                # ปล่อยให้ GEE raise ตอน evaluate/render ดีกว่าไม่ให้แอปล้มตั้งแต่สร้าง object
+                pass
 
     protected_fc = _merge_feature_collections(collections)
 
@@ -898,6 +888,76 @@ def get_protected_area_constraint(
     protected_mask = safe_clip(protected_mask, roi, is_whole_country)
 
     return protected_mask, protected_fc
+
+
+
+
+def _get_feature_collections_from_config(
+    *,
+    roi,
+    config: dict,
+    buffer_m: float = 0,
+    asset_id_key: str = "asset_ids",
+    source_label: str = "layer",
+) -> tuple[list[ee.FeatureCollection], bool, dict]:
+    """
+    Build FeatureCollections from either:
+    - GEE Asset ID
+    - PostGIS table from Spatial Database Bridge
+
+    Returns:
+        collections, has_valid_source, metadata
+    """
+
+    config = config or {}
+    source_type = str(config.get("source_type", "gee_asset") or "gee_asset")
+    collections: list[ee.FeatureCollection] = []
+    metadata: dict = {"source_type": source_type, "feature_count": None}
+
+    if source_type == "postgis":
+        db_config = config.get("db_config", {}) or {}
+        table_name = str(db_config.get("table_name", "") or "").strip()
+        geom_col = str(db_config.get("geom_col", "geom") or "geom").strip()
+        where_sql = str(db_config.get("where_sql", "") or "").strip()
+        limit = int(db_config.get("limit", 5000) or 5000)
+
+        if not table_name:
+            return [], False, metadata
+
+        try:
+            fc, db_meta = fetch_postgis_as_ee_feature_collection(
+                roi=roi,
+                table_name=table_name,
+                geom_col=geom_col,
+                where_sql=where_sql,
+                limit=limit,
+            )
+            if buffer_m > 0:
+                fc = fc.map(lambda f: f.buffer(buffer_m))
+            collections.append(fc)
+            metadata.update(db_meta)
+            return collections, True, metadata
+        except Exception as exc:
+            st.sidebar.warning(f"โหลด {source_label} จาก PostGIS ไม่สำเร็จ: {exc}")
+            return [], False, metadata
+
+    asset_ids = clean_ee_asset_ids(config.get(asset_id_key) or [])
+
+    for asset_id in asset_ids:
+        asset_id = str(asset_id).strip()
+        if not asset_id:
+            continue
+
+        try:
+            fc = ee.FeatureCollection(asset_id).filterBounds(get_roi_geometry(roi))
+            if buffer_m > 0:
+                fc = fc.map(lambda f: f.buffer(buffer_m))
+            collections.append(fc)
+        except Exception:
+            pass
+
+    metadata["feature_count"] = None
+    return collections, bool(asset_ids), metadata
 
 
 # ---------------------------------------------------------
@@ -936,12 +996,20 @@ def build_suitability_model(
     """
 
     road_config = road_config or {}
+    road_source_type = str(road_config.get("source_type", "gee_asset") or "gee_asset")
     road_asset_ids = clean_ee_asset_ids(road_config.get("asset_ids") or [])
-    road_enabled = bool(road_config.get("enabled", False)) and bool(road_asset_ids)
+    road_db_table = str((road_config.get("db_config", {}) or {}).get("table_name", "") or "").strip()
+    road_enabled = bool(road_config.get("enabled", False)) and (
+        bool(road_asset_ids) if road_source_type != "postgis" else bool(road_db_table)
+    )
 
     facility_config = facility_config or {}
+    facility_source_type = str(facility_config.get("source_type", "gee_asset") or "gee_asset")
     facility_asset_ids = clean_ee_asset_ids(facility_config.get("asset_ids") or [])
-    facility_enabled = bool(facility_config.get("enabled", False)) and bool(facility_asset_ids)
+    facility_db_table = str((facility_config.get("db_config", {}) or {}).get("table_name", "") or "").strip()
+    facility_enabled = bool(facility_config.get("enabled", False)) and (
+        bool(facility_asset_ids) if facility_source_type != "postgis" else bool(facility_db_table)
+    )
 
     heat_config = heat_config or {}
     heat_enabled = bool(heat_config.get("enabled", False))
