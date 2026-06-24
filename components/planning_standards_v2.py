@@ -234,9 +234,13 @@ def render_planning_standards_v2_panel(roi=None) -> dict:
         st.markdown("#### ⚖️ น้ำหนัก Preset V2 ที่จะนำไปใช้")
         st.json(norm_weights)
 
-        with st.expander("ปัจจัยที่ควรเพิ่มในขั้นถัดไป", expanded=False):
-            for key, desc in FUTURE_FACTORS_V2.items():
-                st.markdown(f"- **{key}**: {desc}")
+        st.markdown("#### 🔜 ปัจจัยที่ควรเพิ่มในขั้นถัดไป")
+        st.caption(
+            "แสดงเป็นข้อความธรรมดาเพื่อหลีกเลี่ยงปัญหา nested expander ของ Streamlit "
+            "เพราะ panel นี้อยู่ภายใน expander หลักอยู่แล้ว"
+        )
+        for key, desc in FUTURE_FACTORS_V2.items():
+            st.markdown(f"- **{key}**: {desc}")
 
         if st.button("📘 Apply Planning Standards Preset V2", use_container_width=True, key="apply_planning_standards_v2"):
             apply_preset_v2_to_session(weights, city_profile)
