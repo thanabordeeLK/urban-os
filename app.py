@@ -157,11 +157,22 @@ def main() -> None:
                 ]:
                     st.session_state.pop(cache_key, None)
 
+            layer_config_changed = previous_signature != config_signature
+            run_clicked = suitability_config.get("run_clicked", False)
+
             calculate_stats = (
-                suitability_config.get("run_clicked", False)
-                or previous_signature != config_signature
+                run_clicked
+                or layer_config_changed
                 or "suitability_stats_df" not in st.session_state
             )
+
+            # บังคับ refresh เฉพาะตอนกด Run หรือ config วิเคราะห์เปลี่ยน
+            # เพื่อให้ st_folium โหลด GEE tile layer ใหม่ ไม่ค้างแผนที่เดิม
+            if run_clicked or layer_config_changed:
+                st.session_state["urban_os_map_refresh_token"] = (
+                    int(st.session_state.get("urban_os_map_refresh_token", 0)) + 1
+                )
+
             st.session_state["suitability_config_signature"] = config_signature
 
             add_suitability_layers(
@@ -188,11 +199,29 @@ def main() -> None:
     # 8. Mode: Urban Heat Island
     # -----------------------------------------------------
     elif selected_mode == "Urban Heat Island":
+        uhi_settings = state.get("uhi_settings", {}) or {}
+        uhi_signature = json.dumps(
+            {
+                "province": selected_province,
+                "district": selected_district,
+                "is_whole_country": is_whole_country,
+                "uhi_settings": uhi_settings,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        previous_uhi_signature = st.session_state.get("uhi_config_signature")
+        if uhi_settings.get("run_uhi") or previous_uhi_signature != uhi_signature:
+            st.session_state["urban_os_map_refresh_token"] = (
+                int(st.session_state.get("urban_os_map_refresh_token", 0)) + 1
+            )
+        st.session_state["uhi_config_signature"] = uhi_signature
+
         add_uhi_layers(
             Map=Map,
             roi=roi,
             is_whole_country=is_whole_country,
-            settings=state.get("uhi_settings", {}) or {},
+            settings=uhi_settings,
         )
 
     # -----------------------------------------------------

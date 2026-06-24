@@ -1310,6 +1310,8 @@ def add_suitability_layers(
             opacity=0.92,
         )
 
+        st.success("สร้างชั้นแผนที่ Urban Suitability Class แล้ว หากไม่เห็นสีบนแผนที่ ให้กด Run อีกครั้งหรือซูมเข้า ROI")
+
         st.info(
             "หมายเหตุ: แผนที่หลักคือ Urban Suitability Class เท่านั้น "
             "ถ้าเปิด Factor Layers สีที่เห็นจะเป็นการซ้อนหลายชั้นข้อมูล ไม่ควรใช้แทนผล final class"

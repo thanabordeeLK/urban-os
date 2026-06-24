@@ -420,8 +420,9 @@ def render_map(Map, height: int = 850):
             basemap_choice = getattr(Map, "basemap_choice", "OpenStreetMap")
             area_key = getattr(Map, "area_key", "default_area")
 
-            # key เปลี่ยนเมื่อเปลี่ยนพื้นที่หรือเปลี่ยน basemap
-            # แต่ไม่เปลี่ยนเมื่อเปิด/ปิด layer
+            # key เปลี่ยนเมื่อเปลี่ยนพื้นที่ / basemap / analysis layer version
+            # เดิม key ไม่เปลี่ยนตอนคำนวณ layer ใหม่ ทำให้ streamlit-folium บางครั้งยังแสดง map เก่า
+            # จึงเพิ่ม refresh token เฉพาะเมื่อผู้ใช้กด Run หรือ config วิเคราะห์เปลี่ยน
             clean_basemap = basemap_choice.replace(" ", "_")
             clean_area_key = (
                 area_key.replace(" ", "_")
@@ -430,7 +431,8 @@ def render_map(Map, height: int = 850):
                 .replace("\\", "_")
             )
 
-            map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}"
+            map_refresh_token = st.session_state.get("urban_os_map_refresh_token", 0)
+            map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}_{map_refresh_token}"
 
             map_data = st_folium(
                 Map,
