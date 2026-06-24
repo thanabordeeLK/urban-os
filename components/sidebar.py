@@ -889,6 +889,26 @@ def render_suitability_controls() -> dict:
         if registry_forests:
             st.session_state["suit_forest_asset_ids"] = "\n".join(registry_forests)
 
+    # Default values for optional Spatial Database source selectors.
+    # These prevent NameError when a specific optional UI block is not rendered.
+    constraint_source_type_label = "GEE Asset ID"
+    protected_db_table = "public.protected_areas"
+    protected_db_geom_col = "geom"
+    protected_db_where = ""
+    protected_db_limit = 5000
+
+    road_source_type_label = "GEE Asset ID"
+    road_db_table = "public.roads"
+    road_db_geom_col = "geom"
+    road_db_where = ""
+    road_db_limit = 5000
+
+    facility_source_type_label = "GEE Asset ID"
+    facility_db_table = "public.public_facilities"
+    facility_db_geom_col = "geom"
+    facility_db_where = ""
+    facility_db_limit = 5000
+
     # ดึงชั้นข้อมูลจาก Spatial DB Registry มาเป็นตัวเลือก
     spatial_db_roads = get_spatial_db_layers_by_category("roads")
     spatial_db_facilities = get_spatial_db_layers_by_category("public_facilities")
