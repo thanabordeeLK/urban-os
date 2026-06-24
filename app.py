@@ -258,12 +258,52 @@ def main() -> None:
         )
 
     # -----------------------------------------------------
-    # 9. Render Map
+    # 9. Render Map / Data-management panels
     # -----------------------------------------------------
-    render_map(Map)
+    # Data-management modes should show their control panels above the map.
+    # Otherwise the tabs appear below a large map and users may think the panel is missing.
+    management_panel_rendered = False
+
+    if selected_mode == "Local Data Manager":
+        render_local_data_manager(
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
+            render_map(Map)
+
+    elif selected_mode == "Spatial Database":
+        render_spatial_database_connector(
+            roi=roi,
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
+            render_map(Map)
+
+    elif selected_mode == "System Diagnostics":
+        render_system_diagnostics_panel(
+            roi=roi,
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
+            render_map(Map)
+
+    else:
+        render_map(Map)
 
     # -----------------------------------------------------
-    # 9. Render mode-specific outputs
+    # 10. Render mode-specific outputs
     # -----------------------------------------------------
     if selected_mode == "General Plan":
         render_indicator_cards()
@@ -337,11 +377,16 @@ def main() -> None:
         )
 
     elif selected_mode == "Local Data Manager":
-        render_local_data_manager(
-            selected_province=selected_province,
-            selected_district=selected_district,
-            is_whole_country=is_whole_country,
-        )
+        # Already rendered above the map in data-management panel mode.
+        pass
+
+    elif selected_mode == "Spatial Database":
+        # Already rendered above the map in data-management panel mode.
+        pass
+
+    elif selected_mode == "System Diagnostics":
+        # Already rendered above the map in data-management panel mode.
+        pass
 
     elif selected_mode == "Multi-Agent":
         outputs = run_multi_agent_if_requested(
