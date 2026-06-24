@@ -1,0 +1,82 @@
+﻿table_name,description,column_name,data_type,column_description,geometry_type
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,layer_id,text,รหัสชั้นข้อมูล,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,layer_name,text,ชื่อชั้นข้อมูล,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,category,text,หมวดข้อมูล,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,source_type,text,ชนิดแหล่งข้อมูล,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,table_name,text,ชื่อตาราง,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,geom_col,text,ชื่อ geometry column,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,srid,integer,SRID,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,enabled,boolean,เปิดใช้งาน,
+urban_layers,บัญชีรายการชั้นข้อมูลเมือง,description,text,คำอธิบาย,
+roads,โครงข่ายถนนและคมนาคม,road_id,text,รหัสถนน,MULTILINESTRING
+roads,โครงข่ายถนนและคมนาคม,name,text,ชื่อถนน,MULTILINESTRING
+roads,โครงข่ายถนนและคมนาคม,road_class,text,ระดับถนน,MULTILINESTRING
+roads,โครงข่ายถนนและคมนาคม,width_m,numeric,ความกว้างเมตร,MULTILINESTRING
+roads,โครงข่ายถนนและคมนาคม,surface,text,วัสดุผิวทาง,MULTILINESTRING
+roads,โครงข่ายถนนและคมนาคม,lanes,integer,จำนวนช่องจราจร,MULTILINESTRING
+roads,โครงข่ายถนนและคมนาคม,source,text,แหล่งข้อมูล,MULTILINESTRING
+public_facilities,บริการสาธารณะและจุดบริการเมือง,facility_id,text,รหัสบริการ,MULTIPOINT
+public_facilities,บริการสาธารณะและจุดบริการเมือง,name,text,ชื่อสถานที่,MULTIPOINT
+public_facilities,บริการสาธารณะและจุดบริการเมือง,facility_type,text,ประเภทบริการ,MULTIPOINT
+public_facilities,บริการสาธารณะและจุดบริการเมือง,service_level,text,ระดับบริการ,MULTIPOINT
+public_facilities,บริการสาธารณะและจุดบริการเมือง,owner_agency,text,หน่วยงานเจ้าของ,MULTIPOINT
+public_facilities,บริการสาธารณะและจุดบริการเมือง,capacity,numeric,ศักยภาพบริการ,MULTIPOINT
+public_facilities,บริการสาธารณะและจุดบริการเมือง,source,text,แหล่งข้อมูล,MULTIPOINT
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,protected_id,text,รหัสพื้นที่,MULTIPOLYGON
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,name,text,ชื่อพื้นที่,MULTIPOLYGON
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,category,text,ประเภทพื้นที่,MULTIPOLYGON
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,legal_status,text,สถานะกฎหมาย,MULTIPOLYGON
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,buffer_m,numeric,ระยะกันชนเมตร,MULTIPOLYGON
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,restriction_level,text,ระดับข้อจำกัด,MULTIPOLYGON
+protected_areas,พื้นที่อนุรักษ์ พื้นที่กันออก และข้อจำกัดการพัฒนา,source,text,แหล่งข้อมูล,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,zone_id,text,รหัสพื้นที่ผัง,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,zone_code,text,รหัสผังสี,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,zone_name,text,ชื่อประเภทการใช้ประโยชน์ที่ดิน,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,landuse_type,text,กลุ่มการใช้ประโยชน์,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,far,numeric,FAR,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,bcr,numeric,BCR,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,osr,numeric,OSR,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,note,text,หมายเหตุ,MULTIPOLYGON
+zoning,ผังสีและการใช้ประโยชน์ที่ดิน,source,text,แหล่งข้อมูล,MULTIPOLYGON
+parcels,แปลงที่ดิน,parcel_id,text,รหัสแปลง,MULTIPOLYGON
+parcels,แปลงที่ดิน,land_no,text,เลขที่ดิน,MULTIPOLYGON
+parcels,แปลงที่ดิน,parcel_no,text,เลขแปลง,MULTIPOLYGON
+parcels,แปลงที่ดิน,area_rai,numeric,พื้นที่ไร่,MULTIPOLYGON
+parcels,แปลงที่ดิน,ownership_type,text,ประเภทกรรมสิทธิ์,MULTIPOLYGON
+parcels,แปลงที่ดิน,source,text,แหล่งข้อมูล,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,building_id,text,รหัสอาคาร,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,name,text,ชื่ออาคาร,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,use_type,text,ประเภทการใช้ประโยชน์,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,floors,integer,จำนวนชั้น,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,height_m,numeric,ความสูงเมตร,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,construction_year,integer,ปีที่ก่อสร้าง,MULTIPOLYGON
+buildings,อาคารและสิ่งปลูกสร้าง,source,text,แหล่งข้อมูล,MULTIPOLYGON
+waterways,ลำน้ำ แหล่งน้ำ และโครงข่ายน้ำ,water_id,text,รหัสแหล่งน้ำ,MULTILINESTRING
+waterways,ลำน้ำ แหล่งน้ำ และโครงข่ายน้ำ,name,text,ชื่อแหล่งน้ำ,MULTILINESTRING
+waterways,ลำน้ำ แหล่งน้ำ และโครงข่ายน้ำ,water_type,text,ประเภทแหล่งน้ำ,MULTILINESTRING
+waterways,ลำน้ำ แหล่งน้ำ และโครงข่ายน้ำ,seasonal,boolean,ตามฤดูกาล,MULTILINESTRING
+waterways,ลำน้ำ แหล่งน้ำ และโครงข่ายน้ำ,buffer_m,numeric,ระยะกันชนเมตร,MULTILINESTRING
+waterways,ลำน้ำ แหล่งน้ำ และโครงข่ายน้ำ,source,text,แหล่งข้อมูล,MULTILINESTRING
+candidate_areas,พื้นที่ candidate จาก Urban OS,candidate_id,text,รหัส candidate,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,project_id,text,รหัสโครงการ,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,suitability_class,integer,ระดับ suitability,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,area_rai,numeric,พื้นที่ไร่,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,heat_risk_class,integer,ระดับ Heat Risk,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,feasibility_level,text,ระดับความเป็นไปได้,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,priority_phase,text,ระยะพัฒนา,MULTIPOLYGON
+candidate_areas,พื้นที่ candidate จาก Urban OS,note,text,หมายเหตุ,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,hotspot_id,text,รหัส hotspot,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,analysis_date,date,วันที่วิเคราะห์,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,lst_mean_c,numeric,LST เฉลี่ย C,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,lst_max_c,numeric,LST สูงสุด C,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,heat_risk_class,integer,ระดับความร้อน,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,area_rai,numeric,พื้นที่ไร่,MULTIPOLYGON
+uhi_hotspots,พื้นที่ Heat Hotspot / UHI,recommendation,text,แนวทางลดความร้อน,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,project_id,text,รหัสโครงการ,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,project_name,text,ชื่อโครงการ,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,province,text,จังหวัด,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,district,text,อำเภอ,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,planning_standard_profile,text,profile มาตรฐาน,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,created_by,text,ผู้สร้าง,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,created_at_text,text,วันเวลาที่สร้าง,MULTIPOLYGON
+planning_projects,รายการโครงการวิเคราะห์หรือจัดทำผัง,description,text,คำอธิบาย,MULTIPOLYGON

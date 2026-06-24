@@ -4,6 +4,8 @@ import json
 
 import streamlit as st
 
+from components.postgis_schema_generator import render_postgis_schema_generator_panel
+
 from services.spatial_db_service import (
     fetch_postgis_geojson,
     geojson_properties_dataframe,
@@ -61,12 +63,13 @@ def render_spatial_database_connector(
     area_name = "Thailand" if is_whole_country else f"{selected_district}, {selected_province}"
     st.info(f"พื้นที่ทำงานปัจจุบัน: {area_name}")
 
-    tab_overview, tab_connect, tab_preview, tab_registry = st.tabs(
+    tab_overview, tab_connect, tab_preview, tab_registry, tab_schema = st.tabs(
         [
             "Overview",
             "PostGIS Connection",
             "Table Preview",
             "DB Layer Registry",
+            "Schema Generator",
         ]
     )
 
@@ -282,3 +285,6 @@ password = "your-password"
                 st.rerun()
         else:
             st.info("ยังไม่มีรายการใน Spatial DB Registry")
+
+    with tab_schema:
+        render_postgis_schema_generator_panel()
