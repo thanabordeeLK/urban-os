@@ -57,6 +57,7 @@ from config.settings import (
 from services.roi_service import get_provinces, get_districts, get_roi
 from components.local_data_manager import get_registry_asset_ids_by_category
 from components.spatial_database_connector import get_spatial_db_layers_by_category
+from components.planning_standards_v2 import render_planning_standards_v2_panel
 from config.planning_standards import (
     get_standard_profile,
     get_suitability_weight_preset,
@@ -189,7 +190,7 @@ def render_sidebar() -> dict:
                 default="Esri Satellite",
             )
 
-            suitability_config = render_suitability_controls()
+            suitability_config = render_suitability_controls(roi=roi, is_whole_country=is_whole_country)
 
 
         # -------------------------------------------------
@@ -856,7 +857,7 @@ def apply_dpt_uhi_preset_to_session() -> None:
 # ---------------------------------------------------------
 # Suitability controls
 # ---------------------------------------------------------
-def render_suitability_controls() -> dict:
+def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dict:
     """
     Sidebar controls สำหรับโหมด Suitability Analysis
     """
@@ -865,6 +866,8 @@ def render_suitability_controls() -> dict:
     st.caption("ปรับน้ำหนักปัจจัย ระบบจะ normalize ให้อัตโนมัติ")
 
     render_planning_standard_profile_box(context="suitability")
+
+    planning_v2_profile = render_planning_standards_v2_panel(roi=roi)
 
     col_std_a, col_std_b = st.columns([2, 1])
     with col_std_a:
@@ -921,6 +924,23 @@ def render_suitability_controls() -> dict:
     facility_db_geom_col = "geom"
     facility_db_where = ""
     facility_db_limit = 5000
+
+    use_population_capacity = False
+    w_population_capacity = 0.0
+    current_population = 0
+    population_capacity = 0
+
+    use_infrastructure_capacity = False
+    w_infrastructure_capacity = 0.0
+    infra_water = 3
+    infra_wastewater = 3
+    infra_electricity = 3
+    infra_solid_waste = 3
+    infra_drainage = 3
+
+    use_zoning_compliance = False
+    w_zoning_compliance = 0.0
+    zoning_level = "neutral"
 
     # ดึงชั้นข้อมูลจาก Spatial DB Registry มาเป็นตัวเลือก
     spatial_db_roads = get_spatial_db_layers_by_category("roads")
@@ -1384,16 +1404,142 @@ def render_suitability_controls() -> dict:
         else:
             st.warning("ยังไม่ได้เปิดใช้พื้นที่คุ้มครอง/ป่าสงวนเป็น hard constraint")
 
-        # -------------------------------------------------
-        # Persistent RUN state
-        # -------------------------------------------------
-        # ปัญหาเดิม: st.button() เป็น True แค่รอบเดียว พอ Streamlit rerun
-        # จากการซูม/แพนแผนที่ หรือเปลี่ยน widget ผลวิเคราะห์จะหายทันที
-        # วิธีแก้: เก็บสถานะ run ไว้ใน session_state จนกว่าจะกด Clear
-        if "suitability_run_active" not in st.session_state:
-            st.session_state["suitability_run_active"] = False
 
-        st.markdown("### 🚀 Run Model")
+    # -------------------------------------------------
+    # Step 8.7.2 Phase A: Advanced Planning Criteria
+    # -------------------------------------------------
+    with st.expander("🏗️ Advanced Planning Criteria Phase A", expanded=False):
+        st.caption(
+            "เพิ่มปัจจัยขั้นสูงที่ Preset V2 ต้องใช้จริง: ประชากรรองรับ, ความจุโครงสร้างพื้นฐาน "
+            "และผังสี/ข้อกฎหมาย โดยปัจจัยผังสีจะอยู่ท้ายสุดและไม่มีผลถ้าไม่ติ๊กเลือก"
+        )
+
+        st.markdown("#### 1) Population Capacity")
+        use_population_capacity = st.checkbox(
+            "ใช้ Population Capacity เป็นปัจจัยคะแนน",
+            value=False,
+            key="suit_use_population_capacity",
+            help="ถ้าไม่เปิด น้ำหนักจะถูกตั้งเป็น 0 และไม่มีผลต่อ final suitability",
+        )
+        w_population_capacity = st.slider(
+            "น้ำหนัก Population Capacity",
+            0.0,
+            1.0,
+            0.10,
+            0.05,
+            key="suit_w_population_capacity",
+            disabled=not use_population_capacity,
+        )
+        current_population = st.number_input(
+            "ประชากรปัจจุบัน/ประชากรทะเบียนราษฎรในพื้นที่",
+            min_value=0,
+            value=int(st.session_state.get("v2_registered_population", 0) or 0),
+            step=100,
+            key="suit_current_population",
+            disabled=not use_population_capacity,
+        )
+        population_capacity = st.number_input(
+            "ประชากรรองรับตามแผน / capacity เป้าหมาย",
+            min_value=0,
+            value=int(max(current_population * 1.2, 10000)) if current_population else 10000,
+            step=100,
+            key="suit_population_capacity",
+            disabled=not use_population_capacity,
+        )
+        if use_population_capacity:
+            if population_capacity > 0:
+                utilization = current_population / population_capacity
+                st.caption(f"อัตราใช้ capacity: {utilization:.2%}")
+            else:
+                st.warning("ยังไม่ได้กำหนด capacity ประชากร ระบบจะให้คะแนนกลาง")
+
+        st.markdown("#### 2) Infrastructure Capacity")
+        use_infrastructure_capacity = st.checkbox(
+            "ใช้ Infrastructure Capacity เป็นปัจจัยคะแนน",
+            value=False,
+            key="suit_use_infrastructure_capacity",
+            help="ถ้าไม่เปิด น้ำหนักจะถูกตั้งเป็น 0 และไม่มีผลต่อ final suitability",
+        )
+        w_infrastructure_capacity = st.slider(
+            "น้ำหนัก Infrastructure Capacity",
+            0.0,
+            1.0,
+            0.12,
+            0.05,
+            key="suit_w_infrastructure_capacity",
+            disabled=not use_infrastructure_capacity,
+        )
+
+        col_i1, col_i2 = st.columns(2)
+        with col_i1:
+            infra_water = st.slider("ประปา", 1, 5, 3, key="suit_infra_water", disabled=not use_infrastructure_capacity)
+            infra_wastewater = st.slider("น้ำเสีย", 1, 5, 3, key="suit_infra_wastewater", disabled=not use_infrastructure_capacity)
+            infra_electricity = st.slider("ไฟฟ้า", 1, 5, 3, key="suit_infra_electricity", disabled=not use_infrastructure_capacity)
+        with col_i2:
+            infra_solid_waste = st.slider("ขยะ", 1, 5, 3, key="suit_infra_solid_waste", disabled=not use_infrastructure_capacity)
+            infra_drainage = st.slider("ระบายน้ำ", 1, 5, 3, key="suit_infra_drainage", disabled=not use_infrastructure_capacity)
+            if use_infrastructure_capacity:
+                infra_avg = (infra_water + infra_wastewater + infra_electricity + infra_solid_waste + infra_drainage) / 5
+                st.metric("Infrastructure score", f"{infra_avg:.1f}/5")
+
+        st.markdown("---")
+        st.markdown("#### 3) Zoning / Legal Compliance — ปัจจัยท้ายสุด")
+        st.caption(
+            "ตั้งใจวางไว้ท้ายสุดเพื่อเปรียบเทียบผลก่อน/หลังเปิดข้อจำกัดผังสีหรือข้อกฎหมาย "
+            "ถ้ายังไม่ติ๊กเลือก จะไม่มีผลต่อคะแนนและ final class"
+        )
+        use_zoning_compliance = st.checkbox(
+            "ใช้ผังสี / ข้อกำหนดกฎหมาย เป็นปัจจัยคะแนน",
+            value=False,
+            key="suit_use_zoning_compliance",
+        )
+        w_zoning_compliance = st.slider(
+            "น้ำหนัก Zoning / Legal Compliance",
+            0.0,
+            1.0,
+            0.15,
+            0.05,
+            key="suit_w_zoning_compliance",
+            disabled=not use_zoning_compliance,
+            help="เมื่อติ๊กเลือก น้ำหนักนี้จะถูก normalize รวมกับปัจจัยอื่นและมีผลต่อ final class",
+        )
+        zoning_level_label = st.selectbox(
+            "สถานะความสอดคล้องผังสี/ข้อกฎหมาย",
+            [
+                "ยังไม่ตรวจ / เป็นกลาง",
+                "อนุญาตหรือสอดคล้อง",
+                "อนุญาตแบบมีเงื่อนไข / ต้องทบทวน",
+                "จำกัดมาก",
+                "ห้ามใช้ประโยชน์ / ไม่สอดคล้อง",
+            ],
+            index=0,
+            key="suit_zoning_level_label",
+            disabled=not use_zoning_compliance,
+        )
+        zoning_level_map = {
+            "ยังไม่ตรวจ / เป็นกลาง": "neutral",
+            "อนุญาตหรือสอดคล้อง": "permitted",
+            "อนุญาตแบบมีเงื่อนไข / ต้องทบทวน": "conditional",
+            "จำกัดมาก": "restricted",
+            "ห้ามใช้ประโยชน์ / ไม่สอดคล้อง": "prohibited",
+        }
+        zoning_level = zoning_level_map.get(zoning_level_label, "neutral")
+
+        if not use_zoning_compliance:
+            st.info("ยังไม่ใช้ผังสี/ข้อกฎหมาย: weight = 0 ผลวิเคราะห์จะไม่เปลี่ยนจากปัจจัยนี้")
+        else:
+            st.warning("เปิดใช้แล้ว: ผล Final Suitability อาจเปลี่ยนตามคะแนนผังสี/ข้อกฎหมายที่เลือก")
+
+        # -------------------------------------------------
+    # Persistent RUN state
+    # -------------------------------------------------
+    # ปัญหาเดิม: st.button() เป็น True แค่รอบเดียว พอ Streamlit rerun
+    # จากการซูม/แพนแผนที่ หรือเปลี่ยน widget ผลวิเคราะห์จะหายทันที
+    # วิธีแก้: เก็บสถานะ run ไว้ใน session_state จนกว่าจะกด Clear
+    if "suitability_run_active" not in st.session_state:
+        st.session_state["suitability_run_active"] = False
+
+    st.markdown("### 🚀 Run Model")
 
     col_run, col_clear = st.columns([2, 1])
 
@@ -1447,6 +1593,10 @@ def render_suitability_controls() -> dict:
             "road": w_road,
             "facility": w_facility,
             "heat": w_heat,
+            "population_capacity": w_population_capacity if use_population_capacity else 0,
+            "infrastructure_capacity": w_infrastructure_capacity if use_infrastructure_capacity else 0,
+            # Zoning / Legal Compliance intentionally stays last
+            "zoning_compliance": w_zoning_compliance if use_zoning_compliance else 0,
         },
         "show_factor_layers": show_factor_layers,
         "constraint_config": {
@@ -1487,6 +1637,28 @@ def render_suitability_controls() -> dict:
                 "limit": facility_db_limit,
             },
         },
+        "advanced_config": {
+            "population_capacity": {
+                "enabled": use_population_capacity,
+                "current_population": current_population,
+                "population_capacity": population_capacity,
+            },
+            "infrastructure_capacity": {
+                "enabled": use_infrastructure_capacity,
+                "scores": {
+                    "water": infra_water,
+                    "wastewater": infra_wastewater,
+                    "electricity": infra_electricity,
+                    "solid_waste": infra_solid_waste,
+                    "drainage": infra_drainage,
+                },
+            },
+            "zoning_compliance": {
+                "enabled": use_zoning_compliance,
+                "level": zoning_level,
+                "applied_last": True,
+            },
+        },
         "heat_config": {
             "enabled": use_heat_penalty,
             "start_date": str(heat_start_date),
@@ -1497,6 +1669,7 @@ def render_suitability_controls() -> dict:
             "use_landsat8": heat_use_landsat8,
             "use_landsat9": heat_use_landsat9,
         },
+        "planning_v2_profile": planning_v2_profile,
         "run_suitability": st.session_state.get("suitability_run_active", False),
         "run_clicked": run_clicked,
         "clear_clicked": clear_clicked,

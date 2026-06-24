@@ -262,3 +262,15 @@ def get_psa_residential_factors() -> list[str]:
 
 def get_heat_penalty_defaults() -> dict:
     return DPT_HEAT_PENALTY_DEFAULTS.copy()
+
+
+
+DPT_STANDARD_PROFILE_V2_NOTE = {
+    "profile_id": "DPT_2566_PSA_SUITABILITY_V2_CITY_SIZE",
+    "profile_name_th": "Planning Standards Preset V2 ตามขนาดเมือง",
+    "description": (
+        "ต่อยอดจาก V1 โดยแยกเกณฑ์ตามขนาดเมืองและเป้าหมายการวิเคราะห์ "
+        "รวมถึงเตรียมรองรับอาคาร ครัวเรือน ประชากรทะเบียนราษฎร "
+        "ความจุโครงสร้างพื้นฐาน และ zoning compliance"
+    ),
+}

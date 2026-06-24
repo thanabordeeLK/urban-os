@@ -36,6 +36,7 @@ SUITABILITY_KEYS = [
     "suitability_heat_score",
     "suitability_heat_lst",
     "suitability_heat_image_count",
+        "suitability_advanced_metadata",
 ]
 
 UHI_KEYS = [

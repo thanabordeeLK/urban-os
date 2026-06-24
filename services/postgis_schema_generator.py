@@ -160,6 +160,107 @@ TABLES = {
 }
 
 
+
+# Step 8.7.1: extra tables for Planning Standards Preset V2
+TABLES.update({
+    "population_registry": {
+        "description": "ข้อมูลประชากรทะเบียนราษฎรหรือประชากรประมาณการตามพื้นที่",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("area_id", "text", "รหัสพื้นที่"),
+            ("province", "text", "จังหวัด"),
+            ("district", "text", "อำเภอ"),
+            ("subdistrict", "text", "ตำบล"),
+            ("registered_population", "integer", "ประชากรทะเบียนราษฎร"),
+            ("daytime_population", "integer", "ประชากรกลางวัน"),
+            ("data_year", "integer", "ปีข้อมูล"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+    "household_statistics": {
+        "description": "ข้อมูลครัวเรือนและอัตราครัวเรือนต่ออาคาร",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("area_id", "text", "รหัสพื้นที่"),
+            ("household_count", "integer", "จำนวนครัวเรือน"),
+            ("building_count", "integer", "จำนวนอาคาร"),
+            ("household_per_building", "numeric", "ครัวเรือนต่ออาคาร"),
+            ("persons_per_household", "numeric", "คนต่อครัวเรือน"),
+            ("data_year", "integer", "ปีข้อมูล"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+    "infrastructure_capacity": {
+        "description": "ขีดความสามารถโครงสร้างพื้นฐาน ประปา ไฟฟ้า น้ำเสีย ขยะ ระบายน้ำ",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("capacity_id", "text", "รหัส capacity"),
+            ("water_capacity", "numeric", "ขีดความสามารถประปา"),
+            ("wastewater_capacity", "numeric", "ขีดความสามารถบำบัดน้ำเสีย"),
+            ("electricity_capacity", "numeric", "ขีดความสามารถไฟฟ้า"),
+            ("solid_waste_capacity", "numeric", "ขีดความสามารถจัดการขยะ"),
+            ("drainage_capacity", "numeric", "ขีดความสามารถระบายน้ำ"),
+            ("capacity_score", "numeric", "คะแนนรวม capacity"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+    "hazard_zones": {
+        "description": "พื้นที่เสี่ยงภัยหลายประเภท",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("hazard_id", "text", "รหัสพื้นที่เสี่ยงภัย"),
+            ("hazard_type", "text", "ประเภทภัย เช่น flood, landslide, erosion, wildfire"),
+            ("risk_level", "integer", "ระดับความเสี่ยง 1-5"),
+            ("return_period", "text", "รอบปี/ความถี่"),
+            ("depth_m", "numeric", "ความลึกน้ำหรือค่าความรุนแรง"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+    "planning_controls": {
+        "description": "ข้อกำหนดผังเมืองและกฎหมายควบคุมการพัฒนา",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("control_id", "text", "รหัสข้อกำหนด"),
+            ("zone_code", "text", "รหัสผังสี"),
+            ("permitted_use", "text", "การใช้ประโยชน์ที่อนุญาต"),
+            ("prohibited_use", "text", "การใช้ประโยชน์ที่ห้าม"),
+            ("far", "numeric", "FAR"),
+            ("bcr", "numeric", "BCR"),
+            ("osr", "numeric", "OSR"),
+            ("height_limit_m", "numeric", "ความสูงจำกัด"),
+            ("buffer_rule", "text", "กฎ buffer"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+    "service_areas": {
+        "description": "พื้นที่ให้บริการของบริการสาธารณะรายประเภท",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("service_area_id", "text", "รหัสพื้นที่บริการ"),
+            ("facility_type", "text", "ประเภทบริการ"),
+            ("service_level", "text", "ระดับบริการ"),
+            ("coverage_population", "integer", "ประชากรที่รองรับ"),
+            ("coverage_radius_m", "numeric", "รัศมีบริการ"),
+            ("coverage_score", "numeric", "คะแนน coverage"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+    "socioeconomic": {
+        "description": "ตัวชี้วัดเศรษฐกิจ สังคม และความเป็นธรรมเชิงพื้นที่",
+        "geometry": "MULTIPOLYGON",
+        "columns": [
+            ("area_id", "text", "รหัสพื้นที่"),
+            ("population_density", "numeric", "ความหนาแน่นประชากร"),
+            ("elderly_ratio", "numeric", "สัดส่วนผู้สูงอายุ"),
+            ("low_income_ratio", "numeric", "สัดส่วนรายได้น้อย"),
+            ("employment_density", "numeric", "ความหนาแน่นงาน"),
+            ("land_value", "numeric", "ราคาประเมิน/มูลค่าที่ดิน"),
+            ("equity_score", "numeric", "คะแนนความเป็นธรรม"),
+            ("source", "text", "แหล่งข้อมูล"),
+        ],
+    },
+})
+
 def validate_schema_name(schema_name: str) -> str:
     schema_name = str(schema_name or "urban_os").strip()
     if not SAFE_SCHEMA_RE.match(schema_name):

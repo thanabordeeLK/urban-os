@@ -343,3 +343,45 @@ def geojson_properties_dataframe(geojson: dict, max_rows: int = 100) -> pd.DataF
         props = feature.get("properties", {}) or {}
         rows.append(props)
     return pd.DataFrame(rows)
+
+
+
+def count_postgis_features_by_roi(
+    *,
+    table_name: str,
+    geom_col: str = "geom",
+    where_sql: str = "",
+    roi=None,
+    section: str = "postgis",
+) -> int:
+    """
+    Count PostGIS features intersecting the current GEE ROI bbox.
+    Used by Planning Standards Preset V2 to estimate city size from buildings.
+    """
+
+    from sqlalchemy import text
+
+    table_sql = _quote_identifier(table_name)
+    geom_sql = _quote_identifier(geom_col)
+    where_sql = _validate_where_sql(where_sql)
+
+    bbox_4326 = get_roi_bbox_4326(roi)
+    where_parts = [f"{geom_sql} IS NOT NULL"]
+    params = {}
+
+    if bbox_4326:
+        minx, miny, maxx, maxy = bbox_4326
+        where_parts.append(
+            f"ST_Intersects(ST_Transform({geom_sql}, 4326), ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326))"
+        )
+        params.update({"minx": minx, "miny": miny, "maxx": maxx, "maxy": maxy})
+
+    if where_sql:
+        where_parts.append(f"({where_sql})")
+
+    sql = text(f"SELECT COUNT(*) FROM {table_sql} WHERE {' AND '.join(where_parts)}")
+
+    engine = get_postgis_engine(section)
+
+    with engine.connect() as conn:
+        return int(conn.execute(sql, params).scalar() or 0)

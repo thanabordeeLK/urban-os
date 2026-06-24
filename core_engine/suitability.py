@@ -5,6 +5,7 @@ import pandas as pd
 from config.datasets import DATASET_CATALOG
 from components.map_renderer import add_custom_legend
 from services.gee_service import safe_clip
+from core_engine.advanced_planning_criteria import get_advanced_planning_scores
 from services.spatial_db_service import fetch_postgis_as_ee_feature_collection
 from config.planning_standards import get_suitability_weight_preset
 
@@ -145,6 +146,11 @@ def normalize_weights(weights: dict | None) -> dict:
         "road": float(weights.get("road", 0)),
         "facility": float(weights.get("facility", 0)),
         "heat": float(weights.get("heat", 0)),
+        # Step 8.7.2 Phase A advanced factors
+        "population_capacity": float(weights.get("population_capacity", 0)),
+        "infrastructure_capacity": float(weights.get("infrastructure_capacity", 0)),
+        # Intentionally last: optional legal/zoning check
+        "zoning_compliance": float(weights.get("zoning_compliance", 0)),
     }
 
     total = sum(clean_weights.values())
@@ -971,6 +977,7 @@ def build_suitability_model(
     road_config: dict | None = None,
     facility_config: dict | None = None,
     heat_config: dict | None = None,
+    advanced_config: dict | None = None,
 ) -> dict:
     """
     สร้าง Suitability Model หลัก
@@ -1014,6 +1021,11 @@ def build_suitability_model(
     heat_config = heat_config or {}
     heat_enabled = bool(heat_config.get("enabled", False))
 
+    advanced_config = advanced_config or {}
+    population_enabled = bool((advanced_config.get("population_capacity", {}) or {}).get("enabled", False))
+    infrastructure_enabled = bool((advanced_config.get("infrastructure_capacity", {}) or {}).get("enabled", False))
+    zoning_enabled = bool((advanced_config.get("zoning_compliance", {}) or {}).get("enabled", False))
+
     # ถ้ายังไม่มีข้อมูลถนน/บริการสาธารณะจริง หรือยังไม่เปิด Heat Penalty
     # ให้ตัด weight ออกจากสมการอัตโนมัติ ป้องกัน dummy/neutral layer บิดผลวิเคราะห์
     weights = dict(weights or DEFAULT_WEIGHTS.copy())
@@ -1023,6 +1035,14 @@ def build_suitability_model(
         weights["facility"] = 0
     if not heat_enabled:
         weights["heat"] = 0
+
+    if not population_enabled:
+        weights["population_capacity"] = 0
+    if not infrastructure_enabled:
+        weights["infrastructure_capacity"] = 0
+    if not zoning_enabled:
+        # อยู่ท้ายสุดของปัจจัย และไม่มีผลถ้ายังไม่ติ๊กเลือก
+        weights["zoning_compliance"] = 0
 
     weights = normalize_weights(weights)
 
@@ -1055,6 +1075,16 @@ def build_suitability_model(
         constraint_config=constraint_config,
     )
 
+    advanced_scores = get_advanced_planning_scores(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        advanced_config=advanced_config,
+    )
+    population_capacity_score = advanced_scores["population_capacity"]
+    infrastructure_capacity_score = advanced_scores["infrastructure_capacity"]
+    zoning_compliance_score = advanced_scores["zoning_compliance"]
+    advanced_metadata = advanced_scores.get("metadata", {})
+
     raw_score = (
         slope_score.multiply(weights["slope"])
         .add(flood_score.multiply(weights["flood"]))
@@ -1064,6 +1094,10 @@ def build_suitability_model(
         .add(road_score.multiply(weights["road"]))
         .add(facility_score.multiply(weights["facility"]))
         .add(heat_score.multiply(weights["heat"]))
+        .add(population_capacity_score.multiply(weights["population_capacity"]))
+        .add(infrastructure_capacity_score.multiply(weights["infrastructure_capacity"]))
+        # Zoning / Legal Compliance intentionally applied last
+        .add(zoning_compliance_score.multiply(weights["zoning_compliance"]))
         .rename("Suitability_Raw_Score")
     )
 
@@ -1107,6 +1141,9 @@ def build_suitability_model(
     if heat_lst is not None:
         heat_lst = lock_display_projection(heat_lst, esa_lc, is_whole_country)
     protected_constraint = lock_display_projection(protected_constraint, esa_lc, is_whole_country)
+    population_capacity_score = lock_display_projection(population_capacity_score, esa_lc, is_whole_country)
+    infrastructure_capacity_score = lock_display_projection(infrastructure_capacity_score, esa_lc, is_whole_country)
+    zoning_compliance_score = lock_display_projection(zoning_compliance_score, esa_lc, is_whole_country)
 
     final_class = safe_clip(final_class, roi, is_whole_country)
     raw_score = safe_clip(raw_score, roi, is_whole_country)
@@ -1130,6 +1167,10 @@ def build_suitability_model(
         "heat_risk": heat_risk,
         "heat_lst": heat_lst,
         "heat_image_count": heat_image_count,
+        "population_capacity": population_capacity_score,
+        "infrastructure_capacity": infrastructure_capacity_score,
+        "zoning_compliance": zoning_compliance_score,
+        "advanced_metadata": advanced_metadata,
         "protected_constraint": protected_constraint,
         "protected_fc": protected_fc,
         "hard_restricted": hard_restricted,
@@ -1276,6 +1317,7 @@ def add_suitability_layers(
     road_config: dict | None = None,
     facility_config: dict | None = None,
     heat_config: dict | None = None,
+    advanced_config: dict | None = None,
 ):
     """
     เพิ่ม Suitability Layer ลงบนแผนที่
@@ -1290,6 +1332,7 @@ def add_suitability_layers(
             road_config=road_config,
             facility_config=facility_config,
             heat_config=heat_config,
+            advanced_config=advanced_config,
         )
 
         final_class = result["final_class"]
@@ -1302,6 +1345,7 @@ def add_suitability_layers(
         st.session_state["suitability_heat_score"] = result.get("heat")
         st.session_state["suitability_heat_lst"] = result.get("heat_lst")
         st.session_state["suitability_heat_image_count"] = result.get("heat_image_count")
+        st.session_state["suitability_advanced_metadata"] = result.get("advanced_metadata", {})
 
         Map.addLayer(
             final_class,
@@ -1385,6 +1429,27 @@ def add_suitability_layers(
                 result["heat_risk"],
                 {"min": 1, "max": 5, "palette": ["2c7bb6", "abd9e9", "ffffbf", "fdae61", "d7191c"]},
                 "Factor: Heat Risk Class",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["population_capacity"],
+                SUITABILITY_VIS,
+                "Factor: Population Capacity Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["infrastructure_capacity"],
+                SUITABILITY_VIS,
+                "Factor: Infrastructure Capacity Suitability",
+                shown=False,
+                opacity=0.35,
+            )
+            Map.addLayer(
+                result["zoning_compliance"],
+                SUITABILITY_VIS,
+                "Factor: Zoning / Legal Compliance Suitability",
                 shown=False,
                 opacity=0.35,
             )
