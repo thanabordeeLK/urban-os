@@ -21,6 +21,7 @@ from components.indicator_cards import render_indicator_cards
 from components.local_data_manager import render_local_data_manager
 from components.spatial_database_connector import render_spatial_database_connector
 from components.system_diagnostics import render_system_diagnostics_panel
+from components.advanced_criteria_audit import render_advanced_criteria_score_audit
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -196,6 +197,10 @@ def main() -> None:
                 "เลือกน้ำหนักปัจจัยใน Sidebar แล้วกด ▶️ Run Suitability Analysis "
                 "เพื่อสร้างแผนที่ความเหมาะสมต่อการพัฒนาเมือง"
             )
+
+        render_advanced_criteria_score_audit(
+            suitability_config=suitability_config if suitability_config else {},
+        )
 
         render_suitability_methodology()
 

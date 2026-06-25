@@ -320,3 +320,29 @@ def render_suitability_export_panel(
             mime="text/markdown",
             use_container_width=True,
         )
+
+
+
+def get_advanced_criteria_audit_markdown_block() -> str:
+    """
+    Optional markdown block for reports.
+    Uses session state when available.
+    """
+
+    try:
+        import streamlit as st
+    except Exception:
+        return ""
+
+    rows = st.session_state.get("advanced_criteria_audit_rows", []) or []
+    if not rows:
+        return ""
+
+    lines = ["## Advanced Criteria Score Audit", ""]
+    for row in rows:
+        lines.append(
+            f"- **{row.get('factor')}**: source={row.get('source')}, "
+            f"status={row.get('status')}, score={row.get('score')}, "
+            f"weight={row.get('normalized_weight')}, features={row.get('feature_count')}"
+        )
+    return "\n".join(lines)
