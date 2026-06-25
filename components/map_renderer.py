@@ -58,6 +58,34 @@ BASEMAP_ALIASES = {
 
 
 # ---------------------------------------------------------
+# Workspace layer styles
+# ---------------------------------------------------------
+WORKSPACE_SCORE_VIS = {
+    "min": 1,
+    "max": 5,
+    "palette": ["d7191c", "fdae61", "ffffbf", "a6d96a", "1a9641"],
+}
+
+WORKSPACE_RAW_SCORE_VIS = {
+    "min": 1,
+    "max": 5,
+    "palette": ["d7191c", "fdae61", "ffffbf", "a6d96a", "1a9641"],
+}
+
+WORKSPACE_HEAT_RISK_VIS = {
+    "min": 1,
+    "max": 5,
+    "palette": ["2c7bb6", "abd9e9", "ffffbf", "fdae61", "d7191c"],
+}
+
+WORKSPACE_LST_VIS = {
+    "min": 22,
+    "max": 45,
+    "palette": ["08306b", "2171b5", "6baed6", "ffffbf", "fdae61", "f46d43", "a50026"],
+}
+
+
+# ---------------------------------------------------------
 # Basemap utilities
 # ---------------------------------------------------------
 def resolve_basemap_name(basemap_choice: str) -> str:
@@ -591,33 +619,361 @@ def render_map(Map, height: int = 850, key_suffix: str = "", panel_title: str = 
 
 
 
-def render_map_workspace(Map, layout_config: dict | None = None):
+
+
+def _map_scale_options() -> list[str]:
+    return [
+        "Auto / ตาม zoom",
+        "1 : 500",
+        "1 : 1,000",
+        "1 : 2,000",
+        "1 : 5,000",
+        "1 : 10,000",
+        "1 : 25,000",
+        "1 : 50,000",
+        "1 : 100,000",
+        "1 : 250,000",
+    ]
+
+
+def _scale_denominator(scale_label: str):
+    return {
+        "Auto / ตาม zoom": None,
+        "1 : 500": 500,
+        "1 : 1,000": 1000,
+        "1 : 2,000": 2000,
+        "1 : 5,000": 5000,
+        "1 : 10,000": 10000,
+        "1 : 25,000": 25000,
+        "1 : 50,000": 50000,
+        "1 : 100,000": 100000,
+        "1 : 250,000": 250000,
+    }.get(scale_label)
+
+
+def _render_main_map_workspace_controls(layout_config: dict | None = None) -> dict:
     """
-    Render map as 1 / 2 / 3 comparison panes.
+    Main-screen controls for number of map panes and export scale.
+    These widgets are intentionally rendered above the map, not in the sidebar.
     """
 
     layout_config = layout_config or {}
+
+    st.markdown("### 🖥️ Map Workspace")
+    with st.container():
+        c1, c2, c3, c4 = st.columns([1.25, 1.25, 1.2, 1.0])
+
+        pane_options = ["1 หน้าจอ", "2 หน้าจอ", "3 หน้าจอ"]
+        current_pane_label = st.session_state.get("map_pane_count_label", "1 หน้าจอ")
+        pane_index = pane_options.index(current_pane_label) if current_pane_label in pane_options else 0
+
+        with c1:
+            pane_label = st.radio(
+                "จำนวน Map View",
+                pane_options,
+                index=pane_index,
+                horizontal=True,
+                key="map_pane_count_label",
+            )
+
+        scale_options = _map_scale_options()
+        current_scale = st.session_state.get("map_export_scale_label", layout_config.get("scale_label", "1 : 2,000"))
+        scale_index = scale_options.index(current_scale) if current_scale in scale_options else 0
+
+        with c2:
+            scale_label = st.selectbox(
+                "Export scale",
+                scale_options,
+                index=scale_index,
+                key="map_export_scale_label",
+            )
+
+        with c3:
+            paper_preset = st.selectbox(
+                "Export preset",
+                ["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"],
+                index=["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"].index(
+                    st.session_state.get("map_export_paper_preset", layout_config.get("paper_preset", "Screen / Dashboard"))
+                    if st.session_state.get("map_export_paper_preset", layout_config.get("paper_preset", "Screen / Dashboard"))
+                    in ["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"]
+                    else "Screen / Dashboard"
+                ),
+                key="map_export_paper_preset",
+            )
+
+        with c4:
+            apply_scale = st.checkbox(
+                "ปรับ zoom ตาม scale",
+                value=bool(st.session_state.get("map_apply_scale_to_zoom", layout_config.get("apply_scale_to_zoom", False))),
+                key="map_apply_scale_to_zoom",
+            )
+            height = st.number_input(
+                "Map height",
+                min_value=450,
+                max_value=1200,
+                value=int(st.session_state.get("map_panel_height", layout_config.get("height", 850)) or 850),
+                step=50,
+                key="map_panel_height",
+            )
+
+    pane_count = {"1 หน้าจอ": 1, "2 หน้าจอ": 2, "3 หน้าจอ": 3}.get(pane_label, 1)
+
+    return {
+        "pane_count": pane_count,
+        "scale_label": scale_label,
+        "scale_denominator": _scale_denominator(scale_label),
+        "apply_scale_to_zoom": bool(apply_scale),
+        "paper_preset": paper_preset,
+        "height": int(height),
+    }
+
+
+def _workspace_layer_options() -> list[str]:
+    return [
+        "Current Mode Layers",
+        "Boundary Only",
+        "Suitability: Final Class",
+        "Suitability: Raw Score",
+        "Advanced: Population Capacity",
+        "Advanced: Infrastructure Capacity",
+        "Advanced: Service Coverage",
+        "Advanced: Multi-Hazard Safety",
+        "Advanced: Socioeconomic / Equity",
+        "Advanced: Zoning / Legal Compliance",
+        "UHI: Heat Risk",
+        "UHI: Land Surface Temperature",
+    ]
+
+
+def _add_workspace_result_layer(Map, layer_choice: str):
+    """
+    Add one result/analysis layer from session_state to a specific Map View.
+    """
+
+    if layer_choice == "Suitability: Final Class":
+        img = st.session_state.get("suitability_final_class")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Suitability Final Class", opacity=0.92)
+        else:
+            st.warning("ยังไม่มี Suitability Final Class: กด Run Suitability Analysis ก่อน")
+
+    elif layer_choice == "Suitability: Raw Score":
+        img = st.session_state.get("suitability_raw_score")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_RAW_SCORE_VIS, "Suitability Raw Score", opacity=0.75)
+        else:
+            st.warning("ยังไม่มี Suitability Raw Score")
+
+    elif layer_choice == "Advanced: Population Capacity":
+        img = st.session_state.get("suitability_advanced_population_capacity")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Population Capacity Score", opacity=0.75)
+        else:
+            st.info("ยังไม่มี layer Population Capacity แยกใน session นี้")
+
+    elif layer_choice == "Advanced: Infrastructure Capacity":
+        img = st.session_state.get("suitability_advanced_infrastructure_capacity")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Infrastructure Capacity Score", opacity=0.75)
+        else:
+            st.info("ยังไม่มี layer Infrastructure Capacity แยกใน session นี้")
+
+    elif layer_choice == "Advanced: Service Coverage":
+        img = st.session_state.get("suitability_advanced_service_coverage")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Service Coverage Score", opacity=0.75)
+        else:
+            st.info("ยังไม่มี layer Service Coverage แยกใน session นี้")
+
+    elif layer_choice == "Advanced: Multi-Hazard Safety":
+        img = st.session_state.get("suitability_advanced_multi_hazard")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Multi-Hazard Safety Score", opacity=0.75)
+        else:
+            st.info("ยังไม่มี layer Multi-Hazard แยกใน session นี้")
+
+    elif layer_choice == "Advanced: Socioeconomic / Equity":
+        img = st.session_state.get("suitability_advanced_socioeconomic_equity")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Socioeconomic / Equity Score", opacity=0.75)
+        else:
+            st.info("ยังไม่มี layer Socioeconomic / Equity แยกใน session นี้")
+
+    elif layer_choice == "Advanced: Zoning / Legal Compliance":
+        img = st.session_state.get("suitability_advanced_zoning_compliance")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_SCORE_VIS, "Zoning / Legal Compliance Score", opacity=0.75)
+        else:
+            st.info("ยังไม่มี layer Zoning / Legal Compliance แยกใน session นี้")
+
+    elif layer_choice == "UHI: Heat Risk":
+        img = st.session_state.get("suitability_heat_risk") or st.session_state.get("uhi_heat_risk")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_HEAT_RISK_VIS, "Heat Risk", opacity=0.75)
+        else:
+            st.warning("ยังไม่มี Heat Risk layer: รัน UHI หรือ Suitability Heat Penalty ก่อน")
+
+    elif layer_choice == "UHI: Land Surface Temperature":
+        img = st.session_state.get("suitability_heat_lst") or st.session_state.get("uhi_lst")
+        if img is not None:
+            Map.addLayer(img, WORKSPACE_LST_VIS, "Land Surface Temperature", opacity=0.75)
+        else:
+            st.warning("ยังไม่มี LST layer: รัน UHI ก่อน")
+
+    return Map
+
+
+def _create_independent_view_map(
+    *,
+    original_map,
+    view_config: dict,
+    roi=None,
+    is_whole_country: bool = False,
+    selected_province: str = "",
+    selected_district: str = "",
+):
+    """
+    Build a map for one pane. If the pane uses Current Mode Layers, clone the
+    original map. Otherwise create a fresh base map and add only the selected result layer.
+    """
+
+    layer_choice = view_config.get("layer_choice", "Current Mode Layers")
+    scale_label = view_config.get("scale_label", "Auto / ตาม zoom")
+    scale_denom = _scale_denominator(scale_label)
+    apply_scale = bool(view_config.get("apply_scale_to_zoom", False))
+    paper_preset = view_config.get("paper_preset", "Screen / Dashboard")
+    basemap_choice = view_config.get("basemap_choice", getattr(original_map, "basemap_choice", "OpenStreetMap"))
+
+    if layer_choice == "Current Mode Layers":
+        panel_map = clone_map_for_panel(original_map)
+        panel_map.export_scale_label = scale_label
+        panel_map.export_paper_preset = paper_preset
+        add_export_scale_overlay(panel_map, scale_label=scale_label, paper_preset=paper_preset)
+        return panel_map
+
+    panel_map = create_base_map(
+        basemap_choice=basemap_choice,
+        roi=roi,
+        is_whole_country=is_whole_country,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        target_scale_denominator=scale_denom,
+        apply_scale_to_zoom=apply_scale,
+        export_scale_label=scale_label,
+        export_paper_preset=paper_preset,
+    )
+
+    add_boundary(panel_map, roi=roi, is_whole_country=is_whole_country)
+
+    if layer_choice != "Boundary Only":
+        _add_workspace_result_layer(panel_map, layer_choice)
+
+    return panel_map
+
+
+def _render_view_controls(
+    *,
+    idx: int,
+    default_basemap: str,
+    global_scale_label: str,
+    global_paper_preset: str,
+    global_apply_scale: bool,
+) -> dict:
+    """
+    Controls displayed directly above each Map View.
+    """
+
+    st.markdown(f"#### Map View {idx}")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        layer_choice = st.selectbox(
+            "การทำงาน / ผลวิเคราะห์",
+            _workspace_layer_options(),
+            index=0,
+            key=f"map_view_{idx}_layer_choice",
+            help="เลือกเฉพาะ Map View นี้ ไม่กระทบ Map View อื่น",
+        )
+        basemap_choice = st.selectbox(
+            "Basemap",
+            list(BASEMAPS.keys()),
+            index=list(BASEMAPS.keys()).index(default_basemap) if default_basemap in BASEMAPS else 0,
+            key=f"map_view_{idx}_basemap",
+        )
+
+    with c2:
+        scale_options = _map_scale_options()
+        scale_index = scale_options.index(global_scale_label) if global_scale_label in scale_options else 0
+        scale_label = st.selectbox(
+            "Scale ของ View นี้",
+            scale_options,
+            index=scale_index,
+            key=f"map_view_{idx}_scale_label",
+        )
+        apply_scale = st.checkbox(
+            "ใช้ scale นี้กับ zoom",
+            value=bool(global_apply_scale),
+            key=f"map_view_{idx}_apply_scale",
+        )
+
+    return {
+        "layer_choice": layer_choice,
+        "basemap_choice": basemap_choice,
+        "scale_label": scale_label,
+        "apply_scale_to_zoom": apply_scale,
+        "paper_preset": global_paper_preset,
+    }
+
+
+def render_map_workspace(
+    Map,
+    layout_config: dict | None = None,
+    *,
+    roi=None,
+    is_whole_country: bool = False,
+    selected_province: str = "",
+    selected_district: str = "",
+):
+    """
+    Render map workspace with on-screen controls and independent pane content.
+
+    - 1 / 2 / 3 Map Views are selectable directly above the maps.
+    - Export scale can be changed directly above the maps.
+    - Each Map View can choose its own analysis/result layer and basemap.
+    """
+
+    layout_config = _render_main_map_workspace_controls(layout_config)
     pane_count = int(layout_config.get("pane_count", 1) or 1)
     pane_count = max(1, min(3, pane_count))
     height = int(layout_config.get("height", 850) or 850)
 
-    if pane_count <= 1:
-        render_map(Map, height=height, key_suffix="single")
-        return
-
-    st.info(
-        "โหมดเปรียบเทียบแผนที่: แต่ละหน้าจอใช้ชุดชั้นข้อมูลเดียวกัน "
-        "แต่สามารถเปิด/ปิด Layer Control ในแต่ละ pane แยกกัน เพื่อเทียบข้อมูลคนละชุดได้"
-    )
+    if pane_count > 1:
+        st.info(
+            "เลือกการทำงาน/ผลวิเคราะห์ของแต่ละ Map View ได้แยกกัน เช่น View 1 = Suitability, "
+            "View 2 = Heat Risk, View 3 = Boundary Only"
+        )
 
     cols = st.columns(pane_count)
 
     for idx, col in enumerate(cols, start=1):
         with col:
-            panel_map = clone_map_for_panel(Map)
+            view_config = _render_view_controls(
+                idx=idx,
+                default_basemap=getattr(Map, "basemap_choice", "OpenStreetMap"),
+                global_scale_label=layout_config.get("scale_label", "Auto / ตาม zoom"),
+                global_paper_preset=layout_config.get("paper_preset", "Screen / Dashboard"),
+                global_apply_scale=layout_config.get("apply_scale_to_zoom", False),
+            )
+            panel_map = _create_independent_view_map(
+                original_map=Map,
+                view_config=view_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
             render_map(
                 panel_map,
                 height=height,
-                key_suffix=f"compare_{idx}",
-                panel_title=f"Map View {idx}",
+                key_suffix=f"view_{idx}_{view_config.get('layer_choice','').replace(' ', '_')}",
             )

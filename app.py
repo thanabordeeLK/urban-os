@@ -286,7 +286,14 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
-            render_map_workspace(Map, map_layout_config)
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
 
     elif selected_mode == "Spatial Database":
         render_spatial_database_connector(
@@ -298,7 +305,14 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
-            render_map_workspace(Map, map_layout_config)
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
 
     elif selected_mode == "System Diagnostics":
         render_system_diagnostics_panel(
@@ -310,10 +324,24 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
-            render_map_workspace(Map, map_layout_config)
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
 
     else:
-        render_map_workspace(Map, map_layout_config)
+        render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
 
     # -----------------------------------------------------
     # 10. Render mode-specific outputs

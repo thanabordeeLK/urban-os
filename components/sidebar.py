@@ -186,6 +186,48 @@ def render_map_display_controls() -> dict:
     }
 
 
+
+
+def get_map_layout_config_from_session() -> dict:
+    """
+    Read map layout/export settings from session_state.
+
+    The actual widgets are rendered on the main page by map_renderer.render_map_workspace()
+    so users can adjust map views directly above the map.
+    """
+
+    scale_label = st.session_state.get("map_export_scale_label", "1 : 2,000")
+    pane_label = st.session_state.get("map_pane_count_label", "1 หน้าจอ")
+
+    pane_count = {
+        "1 หน้าจอ": 1,
+        "2 หน้าจอ": 2,
+        "3 หน้าจอ": 3,
+    }.get(pane_label, 1)
+
+    scale_denominator = {
+        "Auto / ตาม zoom": None,
+        "1 : 500": 500,
+        "1 : 1,000": 1000,
+        "1 : 2,000": 2000,
+        "1 : 5,000": 5000,
+        "1 : 10,000": 10000,
+        "1 : 25,000": 25000,
+        "1 : 50,000": 50000,
+        "1 : 100,000": 100000,
+        "1 : 250,000": 250000,
+    }.get(scale_label)
+
+    return {
+        "pane_count": pane_count,
+        "scale_label": scale_label,
+        "scale_denominator": scale_denominator,
+        "apply_scale_to_zoom": bool(st.session_state.get("map_apply_scale_to_zoom", False)),
+        "paper_preset": st.session_state.get("map_export_paper_preset", "Screen / Dashboard"),
+        "height": int(st.session_state.get("map_panel_height", 850) or 850),
+    }
+
+
 def render_sidebar() -> dict:
     # Default state containers for all modes
     # Prevent UnboundLocalError when returning state from modes that do not use every config group.
@@ -250,9 +292,7 @@ def render_sidebar() -> dict:
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
-        map_layout_config = render_map_display_controls()
-
-        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
+        map_layout_config = get_map_layout_config_from_session()
 
         layer_settings = {}
         ai_settings = {}

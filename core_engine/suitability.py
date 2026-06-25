@@ -1370,6 +1370,12 @@ def add_suitability_layers(
         st.session_state["suitability_heat_lst"] = result.get("heat_lst")
         st.session_state["suitability_heat_image_count"] = result.get("heat_image_count")
         st.session_state["suitability_advanced_metadata"] = result.get("advanced_metadata", {})
+        st.session_state["suitability_advanced_population_capacity"] = result.get("population_capacity")
+        st.session_state["suitability_advanced_infrastructure_capacity"] = result.get("infrastructure_capacity")
+        st.session_state["suitability_advanced_service_coverage"] = result.get("service_coverage")
+        st.session_state["suitability_advanced_multi_hazard"] = result.get("multi_hazard")
+        st.session_state["suitability_advanced_socioeconomic_equity"] = result.get("socioeconomic_equity")
+        st.session_state["suitability_advanced_zoning_compliance"] = result.get("zoning_compliance")
 
         Map.addLayer(
             final_class,
