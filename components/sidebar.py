@@ -89,6 +89,103 @@ BASEMAP_OPTIONS = [
 ]
 
 
+
+
+def render_map_display_controls() -> dict:
+    """
+    Global map layout + export scale controls.
+    """
+
+    with st.expander("🖥️ Map Layout / Export Scale", expanded=False):
+        st.caption(
+            "เลือกจำนวนหน้าจอแผนที่เพื่อเปรียบเทียบข้อมูล และกำหนดมาตราส่วนเป้าหมายสำหรับ export"
+        )
+
+        pane_label = st.radio(
+            "จำนวนหน้าจอแผนที่",
+            ["1 หน้าจอ", "2 หน้าจอ", "3 หน้าจอ"],
+            index=0,
+            key="map_pane_count_label",
+            horizontal=True,
+        )
+        pane_count = {
+            "1 หน้าจอ": 1,
+            "2 หน้าจอ": 2,
+            "3 หน้าจอ": 3,
+        }.get(pane_label, 1)
+
+        scale_options = [
+            "Auto / ตาม zoom",
+            "1 : 500",
+            "1 : 1,000",
+            "1 : 2,000",
+            "1 : 5,000",
+            "1 : 10,000",
+            "1 : 25,000",
+            "1 : 50,000",
+            "1 : 100,000",
+            "1 : 250,000",
+        ]
+
+        scale_label = st.selectbox(
+            "มาตราส่วนเป้าหมายสำหรับ export",
+            scale_options,
+            index=2,
+            key="map_export_scale_label",
+            help="เป็นมาตราส่วนเป้าหมายสำหรับเตรียม export/print ไม่ใช่การรับรองมาตราส่วนทางกฎหมาย",
+        )
+
+        scale_denominator = {
+            "Auto / ตาม zoom": None,
+            "1 : 500": 500,
+            "1 : 1,000": 1000,
+            "1 : 2,000": 2000,
+            "1 : 5,000": 5000,
+            "1 : 10,000": 10000,
+            "1 : 25,000": 25000,
+            "1 : 50,000": 50000,
+            "1 : 100,000": 100000,
+            "1 : 250,000": 250000,
+        }.get(scale_label)
+
+        apply_scale_to_zoom = st.checkbox(
+            "ปรับ zoom ให้ใกล้มาตราส่วนนี้",
+            value=False,
+            key="map_apply_scale_to_zoom",
+            help="ใช้สูตรประมาณการ Web Mercator และ 0.28 mm/pixel จึงเหมาะสำหรับจัดหน้าก่อน export",
+        )
+
+        paper_preset = st.selectbox(
+            "ขนาดงานส่งออก",
+            ["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"],
+            index=0,
+            key="map_export_paper_preset",
+        )
+
+        height = st.slider(
+            "ความสูงแผนที่บนหน้าจอ",
+            min_value=450,
+            max_value=1100,
+            value=850,
+            step=50,
+            key="map_panel_height",
+        )
+
+        st.caption(
+            "หมายเหตุ: แผนที่เว็บใช้ zoom/DPI ของจอ จึงเป็นมาตราส่วนประมาณการ "
+            "ถ้าต้องใช้เป็นแผนที่ทางราชการควรตรวจสอบซ้ำใน GIS layout"
+        )
+
+    return {
+        "pane_count": pane_count,
+        "scale_label": scale_label,
+        "scale_denominator": scale_denominator,
+        "apply_scale_to_zoom": bool(apply_scale_to_zoom),
+        "paper_preset": paper_preset,
+        "height": height,
+    }
+
+
 def render_sidebar() -> dict:
     # Default state containers for all modes
     # Prevent UnboundLocalError when returning state from modes that do not use every config group.
