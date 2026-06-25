@@ -16,7 +16,7 @@ from config.settings import configure_page, inject_css
 from config.auth import initialize_earth_engine
 
 from components.sidebar import render_sidebar
-from components.map_renderer import create_base_map, add_boundary, render_map
+from components.map_renderer import create_base_map, add_boundary, render_map, render_map_workspace
 from components.indicator_cards import render_indicator_cards
 from components.local_data_manager import render_local_data_manager
 from components.spatial_database_connector import render_spatial_database_connector
@@ -73,6 +73,7 @@ def main() -> None:
     roi = state.get("roi")
     is_whole_country = state.get("is_whole_country", False)
     basemap_choice = state.get("basemap_choice", "OpenStreetMap")
+    map_layout_config = state.get("map_layout_config", {}) or {}
 
     selected_province = state.get("selected_province", "")
     selected_district = state.get("selected_district", "")
@@ -86,6 +87,10 @@ def main() -> None:
         is_whole_country=is_whole_country,
         selected_province=selected_province,
         selected_district=selected_district,
+        target_scale_denominator=map_layout_config.get("scale_denominator"),
+        apply_scale_to_zoom=map_layout_config.get("apply_scale_to_zoom", False),
+        export_scale_label=map_layout_config.get("scale_label", ""),
+        export_paper_preset=map_layout_config.get("paper_preset", ""),
     )
 
     add_boundary(
@@ -281,7 +286,7 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
-            render_map(Map)
+            render_map_workspace(Map, map_layout_config)
 
     elif selected_mode == "Spatial Database":
         render_spatial_database_connector(
@@ -293,7 +298,7 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
-            render_map(Map)
+            render_map_workspace(Map, map_layout_config)
 
     elif selected_mode == "System Diagnostics":
         render_system_diagnostics_panel(
@@ -305,10 +310,10 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
-            render_map(Map)
+            render_map_workspace(Map, map_layout_config)
 
     else:
-        render_map(Map)
+        render_map_workspace(Map, map_layout_config)
 
     # -----------------------------------------------------
     # 10. Render mode-specific outputs

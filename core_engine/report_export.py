@@ -346,3 +346,31 @@ def get_advanced_criteria_audit_markdown_block() -> str:
             f"weight={row.get('normalized_weight')}, features={row.get('feature_count')}"
         )
     return "\n".join(lines)
+
+
+
+def get_map_export_scale_markdown_block() -> str:
+    """
+    Optional map export scale note for reports.
+    """
+
+    try:
+        import streamlit as st
+    except Exception:
+        return ""
+
+    scale_label = st.session_state.get("map_export_scale_label", "")
+    paper_preset = st.session_state.get("map_export_paper_preset", "")
+    pane_label = st.session_state.get("map_pane_count_label", "")
+
+    if not scale_label:
+        return ""
+
+    return (
+        "## Map Export Scale\n\n"
+        f"- Target scale: `{scale_label}`\n"
+        f"- Export preset: `{paper_preset}`\n"
+        f"- Map layout: `{pane_label}`\n\n"
+        "หมายเหตุ: มาตราส่วนใน web map เป็นค่าเป้าหมายโดยประมาณ "
+        "ควรตรวจสอบซ้ำใน GIS layout หากต้องใช้เป็นแผนที่ทางราชการ\n"
+    )

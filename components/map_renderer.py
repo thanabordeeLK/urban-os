@@ -1,3 +1,6 @@
+import copy
+import math
+
 import streamlit as st
 import geemap.foliumap as geemap
 import folium
@@ -220,6 +223,98 @@ def initialize_or_update_map_view(
 
 
 # ---------------------------------------------------------
+# Map scale / export helpers
+# ---------------------------------------------------------
+def estimate_leaflet_zoom_from_scale(
+    scale_denominator: int | float | None,
+    latitude: float = 15.0,
+) -> int | None:
+    """
+    Approximate Leaflet/Web Mercator zoom from representative fraction.
+
+    resolution(m/px) ≈ scale_denominator × 0.00028
+
+    This is an export-planning approximation, not a legal cartographic scale guarantee.
+    """
+
+    try:
+        denominator = float(scale_denominator or 0)
+        lat = float(latitude or 0)
+    except Exception:
+        return None
+
+    if denominator <= 0:
+        return None
+
+    target_resolution = denominator * 0.00028
+    if target_resolution <= 0:
+        return None
+
+    earth_resolution_z0 = 156543.03392 * math.cos(math.radians(lat))
+    if earth_resolution_z0 <= 0:
+        earth_resolution_z0 = 156543.03392
+
+    zoom = math.log2(earth_resolution_z0 / target_resolution)
+    return int(max(0, min(22, round(zoom))))
+
+
+def add_export_scale_overlay(Map, scale_label: str = "", paper_preset: str = ""):
+    """
+    Add a small visual export-scale label on the map.
+    """
+
+    if not scale_label or scale_label.startswith("Auto"):
+        return Map
+
+    try:
+        safe_scale = escape(str(scale_label))
+        safe_paper = escape(str(paper_preset or ""))
+
+        html = f"""
+        {{% macro html(this, kwargs) %}}
+        <div style="
+            position: fixed;
+            left: 18px;
+            bottom: 28px;
+            z-index: 9999;
+            background: rgba(255,255,255,0.92);
+            color: #111;
+            border: 1px solid rgba(0,0,0,0.25);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+        ">
+            🧭 Export scale {safe_scale}
+            <div style="font-size:11px; font-weight:500; margin-top:2px;">
+                {safe_paper}
+            </div>
+        </div>
+        {{% endmacro %}}
+        """
+
+        macro = MacroElement()
+        macro._template = Template(html)
+        Map.get_root().add_child(macro)
+    except Exception:
+        pass
+
+    return Map
+
+
+def clone_map_for_panel(Map):
+    """
+    Try to clone the map so comparison panes can have independent layer controls.
+    """
+
+    try:
+        return copy.deepcopy(Map)
+    except Exception:
+        return Map
+
+
+# ---------------------------------------------------------
 # Map creation
 # ---------------------------------------------------------
 def create_base_map(
@@ -228,6 +323,10 @@ def create_base_map(
     is_whole_country: bool = False,
     selected_province: str = "",
     selected_district: str = "",
+    target_scale_denominator: int | None = None,
+    apply_scale_to_zoom: bool = False,
+    export_scale_label: str = "",
+    export_paper_preset: str = "",
 ):
     """
     สร้างแผนที่ฐาน
@@ -243,6 +342,15 @@ def create_base_map(
         selected_province=selected_province,
         selected_district=selected_district,
     )
+
+    if apply_scale_to_zoom and target_scale_denominator:
+        approx_zoom = estimate_leaflet_zoom_from_scale(
+            target_scale_denominator,
+            latitude=center[0] if center else 15.0,
+        )
+        if approx_zoom is not None:
+            zoom = approx_zoom
+            should_fit_bounds = False
 
     Map = geemap.Map(
         location=center,
@@ -262,6 +370,14 @@ def create_base_map(
 
     Map.basemap_choice = resolve_basemap_name(basemap_choice)
     Map.area_key = get_area_key(selected_province, selected_district)
+    Map.export_scale_label = export_scale_label
+    Map.export_paper_preset = export_paper_preset
+
+    add_export_scale_overlay(
+        Map,
+        scale_label=export_scale_label,
+        paper_preset=export_paper_preset,
+    )
 
     return Map
 
@@ -410,7 +526,7 @@ def add_custom_legend(
 # ---------------------------------------------------------
 # Render map
 # ---------------------------------------------------------
-def render_map(Map, height: int = 850):
+def render_map(Map, height: int = 850, key_suffix: str = "", panel_title: str = ""):
     """
     แสดงผลแผนที่หลัก และบันทึกตำแหน่ง zoom/pan ล่าสุดไว้ใน session_state
     """
@@ -432,7 +548,22 @@ def render_map(Map, height: int = 850):
             )
 
             map_refresh_token = st.session_state.get("urban_os_map_refresh_token", 0)
-            map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}_{map_refresh_token}"
+            suffix = str(key_suffix or "").replace(" ", "_").replace("/", "_")
+            if suffix:
+                map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}_{map_refresh_token}_{suffix}"
+            else:
+                map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}_{map_refresh_token}"
+
+            if panel_title:
+                st.markdown(f"**{panel_title}**")
+
+            export_scale_label = getattr(Map, "export_scale_label", "")
+            export_paper_preset = getattr(Map, "export_paper_preset", "")
+            if export_scale_label and not str(export_scale_label).startswith("Auto"):
+                st.caption(
+                    f"🧭 Export scale target: {export_scale_label} "
+                    f"{('· ' + export_paper_preset) if export_paper_preset else ''}"
+                )
 
             map_data = st_folium(
                 Map,
@@ -457,3 +588,36 @@ def render_map(Map, height: int = 850):
 
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการโหลดแผนที่: {e}")
+
+
+
+def render_map_workspace(Map, layout_config: dict | None = None):
+    """
+    Render map as 1 / 2 / 3 comparison panes.
+    """
+
+    layout_config = layout_config or {}
+    pane_count = int(layout_config.get("pane_count", 1) or 1)
+    pane_count = max(1, min(3, pane_count))
+    height = int(layout_config.get("height", 850) or 850)
+
+    if pane_count <= 1:
+        render_map(Map, height=height, key_suffix="single")
+        return
+
+    st.info(
+        "โหมดเปรียบเทียบแผนที่: แต่ละหน้าจอใช้ชุดชั้นข้อมูลเดียวกัน "
+        "แต่สามารถเปิด/ปิด Layer Control ในแต่ละ pane แยกกัน เพื่อเทียบข้อมูลคนละชุดได้"
+    )
+
+    cols = st.columns(pane_count)
+
+    for idx, col in enumerate(cols, start=1):
+        with col:
+            panel_map = clone_map_for_panel(Map)
+            render_map(
+                panel_map,
+                height=height,
+                key_suffix=f"compare_{idx}",
+                panel_title=f"Map View {idx}",
+            )

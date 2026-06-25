@@ -153,6 +153,10 @@ def render_sidebar() -> dict:
 
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
+        map_layout_config = render_map_display_controls()
+
+        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
+
         layer_settings = {}
         ai_settings = {}
         suitability_config = None
@@ -273,6 +277,7 @@ def render_sidebar() -> dict:
         "is_whole_country": is_whole_country,
         "roi": roi,
         "basemap_choice": basemap_choice,
+        "map_layout_config": map_layout_config,
         "layer_settings": layer_settings,
         "ai_settings": ai_settings,
         "suitability_config": suitability_config,
