@@ -37,6 +37,7 @@ SUITABILITY_KEYS = [
     "suitability_heat_lst",
     "suitability_heat_image_count",
         "suitability_advanced_metadata",
+        "geometry_scoring",
         "advanced_criteria_source_helper",
 ]
 

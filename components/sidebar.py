@@ -60,6 +60,7 @@ from components.spatial_database_connector import get_spatial_db_layers_by_categ
 from components.planning_standards_v2 import render_planning_standards_v2_panel
 from components.advanced_criteria_postgis import (
     render_advanced_criteria_postgis_autofill,
+    render_postgis_geometry_score_controls,
     render_zoning_compliance_controls,
 )
 from config.planning_standards import (
@@ -980,6 +981,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
         "criteria_scores": {},
         "applied_last": True,
     }
+    geometry_score_configs = {}
 
     # ดึงชั้นข้อมูลจาก Spatial DB Registry มาเป็นตัวเลือก
     spatial_db_roads = get_spatial_db_layers_by_category("roads")
@@ -1635,6 +1637,15 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
         )
         zoning_level = zoning_criteria_config.get("level", "neutral")
 
+        geometry_score_configs = render_postgis_geometry_score_controls(
+            use_population_capacity=use_population_capacity,
+            use_infrastructure_capacity=use_infrastructure_capacity,
+            use_service_coverage=use_service_coverage,
+            use_multi_hazard=use_multi_hazard,
+            use_socioeconomic_equity=use_socioeconomic_equity,
+            use_zoning_compliance=use_zoning_compliance,
+        )
+
         if not use_zoning_compliance:
             st.info("ยังไม่ใช้ผังสี/ข้อกฎหมาย: weight = 0 ผลวิเคราะห์จะไม่เปลี่ยนจากปัจจัยนี้")
         else:
@@ -1758,6 +1769,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                 "enabled": use_population_capacity,
                 "current_population": current_population,
                 "population_capacity": population_capacity,
+                "geometry_scoring": geometry_score_configs.get("population_capacity", {}),
             },
             "infrastructure_capacity": {
                 "enabled": use_infrastructure_capacity,
@@ -1768,6 +1780,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                     "solid_waste": infra_solid_waste,
                     "drainage": infra_drainage,
                 },
+                "geometry_scoring": geometry_score_configs.get("infrastructure_capacity", {}),
             },
             "service_coverage": {
                 "enabled": use_service_coverage,
@@ -1780,6 +1793,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                     "fire": svc_fire,
                     "transport": svc_transport,
                 },
+                "geometry_scoring": geometry_score_configs.get("service_coverage", {}),
             },
             "multi_hazard": {
                 "enabled": use_multi_hazard,
@@ -1791,6 +1805,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                     "earthquake": hazard_earthquake,
                     "stormwater": hazard_stormwater,
                 },
+                "geometry_scoring": geometry_score_configs.get("multi_hazard", {}),
             },
             "socioeconomic_equity": {
                 "enabled": use_socioeconomic_equity,
@@ -1801,11 +1816,13 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                     "land_tenure_readiness": equity_land_tenure,
                     "displacement_safety": equity_displacement,
                 },
+                "geometry_scoring": geometry_score_configs.get("socioeconomic_equity", {}),
             },
             "zoning_compliance": {
                 **zoning_criteria_config,
                 "enabled": use_zoning_compliance,
                 "level": zoning_level,
+                "geometry_scoring": geometry_score_configs.get("zoning_compliance", {}),
                 "applied_last": True,
             },
         },

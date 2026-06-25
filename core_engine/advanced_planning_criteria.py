@@ -3,6 +3,7 @@ from __future__ import annotations
 import ee
 
 from services.gee_service import safe_clip
+from core_engine.postgis_geometry_scoring import get_postgis_score_image
 
 
 def _clamp_score(value, default: float = 3.0) -> float:
@@ -155,6 +156,41 @@ def constant_score_image(score: float, name: str, roi=None, is_whole_country: bo
     return image
 
 
+def _score_image_from_manual_or_geometry(
+    *,
+    roi,
+    is_whole_country: bool,
+    manual_score: float,
+    image_name: str,
+    config: dict | None,
+    invert_score: bool = False,
+) -> tuple[ee.Image, dict]:
+    cfg = config or {}
+    geom_cfg = cfg.get("geometry_scoring", {}) or {}
+
+    if bool(cfg.get("enabled", False)) and bool(geom_cfg.get("enabled", False)):
+        return get_postgis_score_image(
+            roi=roi,
+            config=geom_cfg,
+            image_name=image_name,
+            is_whole_country=is_whole_country,
+            default_score=manual_score,
+            invert_score=invert_score,
+        )
+
+    return (
+        constant_score_image(manual_score, image_name, roi=roi, is_whole_country=is_whole_country),
+        {
+            "enabled": False,
+            "source_type": "manual_or_neutral",
+            "used_geometry": False,
+            "score_field": None,
+            "feature_count": 0,
+            "error": None,
+        },
+    )
+
+
 def get_advanced_planning_scores(
     *,
     roi,
@@ -208,43 +244,57 @@ def get_advanced_planning_scores(
         score_override=zoning_cfg.get("score_override", None),
     )
 
+    population_img, population_geom_meta = _score_image_from_manual_or_geometry(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        manual_score=pop_score_value,
+        image_name="Population_Capacity_Suitability",
+        config=pop_cfg,
+    )
+    infrastructure_img, infrastructure_geom_meta = _score_image_from_manual_or_geometry(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        manual_score=infra_score_value,
+        image_name="Infrastructure_Capacity_Suitability",
+        config=infra_cfg,
+    )
+    service_img, service_geom_meta = _score_image_from_manual_or_geometry(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        manual_score=service_score_value,
+        image_name="Service_Coverage_Suitability",
+        config=service_cfg,
+    )
+    hazard_img, hazard_geom_meta = _score_image_from_manual_or_geometry(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        manual_score=hazard_score_value,
+        image_name="Multi_Hazard_Safety_Suitability",
+        config=hazard_cfg,
+        invert_score=bool((hazard_cfg.get("geometry_scoring", {}) or {}).get("invert_score", True)),
+    )
+    equity_img, equity_geom_meta = _score_image_from_manual_or_geometry(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        manual_score=equity_score_value,
+        image_name="Socioeconomic_Equity_Suitability",
+        config=equity_cfg,
+    )
+    zoning_img, zoning_geom_meta = _score_image_from_manual_or_geometry(
+        roi=roi,
+        is_whole_country=is_whole_country,
+        manual_score=zoning_score_value,
+        image_name="Zoning_Legal_Compliance_Suitability",
+        config=zoning_cfg,
+    )
+
     return {
-        "population_capacity": constant_score_image(
-            pop_score_value,
-            "Population_Capacity_Suitability",
-            roi=roi,
-            is_whole_country=is_whole_country,
-        ),
-        "infrastructure_capacity": constant_score_image(
-            infra_score_value,
-            "Infrastructure_Capacity_Suitability",
-            roi=roi,
-            is_whole_country=is_whole_country,
-        ),
-        "service_coverage": constant_score_image(
-            service_score_value,
-            "Service_Coverage_Suitability",
-            roi=roi,
-            is_whole_country=is_whole_country,
-        ),
-        "multi_hazard": constant_score_image(
-            hazard_score_value,
-            "Multi_Hazard_Safety_Suitability",
-            roi=roi,
-            is_whole_country=is_whole_country,
-        ),
-        "socioeconomic_equity": constant_score_image(
-            equity_score_value,
-            "Socioeconomic_Equity_Suitability",
-            roi=roi,
-            is_whole_country=is_whole_country,
-        ),
-        "zoning_compliance": constant_score_image(
-            zoning_score_value,
-            "Zoning_Legal_Compliance_Suitability",
-            roi=roi,
-            is_whole_country=is_whole_country,
-        ),
+        "population_capacity": population_img,
+        "infrastructure_capacity": infrastructure_img,
+        "service_coverage": service_img,
+        "multi_hazard": hazard_img,
+        "socioeconomic_equity": equity_img,
+        "zoning_compliance": zoning_img,
         "metadata": {
             "population_score": pop_score_value,
             "infrastructure_score": infra_score_value,
@@ -255,6 +305,14 @@ def get_advanced_planning_scores(
             "zoning_source_type": zoning_cfg.get("source_type", "Manual"),
             "zoning_criteria_enabled": zoning_cfg.get("criteria_enabled", {}) or {},
             "zoning_criteria_scores": zoning_cfg.get("criteria_scores", {}) or {},
+            "geometry_scoring": {
+                "population_capacity": population_geom_meta,
+                "infrastructure_capacity": infrastructure_geom_meta,
+                "service_coverage": service_geom_meta,
+                "multi_hazard": hazard_geom_meta,
+                "socioeconomic_equity": equity_geom_meta,
+                "zoning_compliance": zoning_geom_meta,
+            },
             "population_enabled": bool(pop_cfg.get("enabled", False)),
             "infrastructure_enabled": bool(infra_cfg.get("enabled", False)),
             "service_coverage_enabled": bool(service_cfg.get("enabled", False)),

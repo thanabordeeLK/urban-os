@@ -521,3 +521,184 @@ def render_zoning_compliance_controls(*, roi=None, use_zoning_compliance: bool =
         },
         "applied_last": True,
     }
+
+
+
+def _geometry_score_config_ui(
+    *,
+    label: str,
+    key_prefix: str,
+    default_table: str,
+    default_score_field: str,
+    default_buffer_m: int = 0,
+    default_invert: bool = False,
+    enabled_dependency: bool = True,
+) -> dict:
+    use_geom = st.checkbox(
+        f"ใช้ PostGIS Geometry Score Map: {label}",
+        value=False,
+        key=f"{key_prefix}_geom_enabled",
+        disabled=not enabled_dependency,
+        help="ถ้าเปิด ระบบจะสร้าง raster score จาก geometry และ score_field โดยตรง แทนค่า manual/auto-fill",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        table_name = st.text_input(
+            f"{label} table",
+            default_table,
+            key=f"{key_prefix}_geom_table",
+            disabled=not (enabled_dependency and use_geom),
+        )
+        geom_col = st.text_input(
+            f"{label} geom",
+            "geom",
+            key=f"{key_prefix}_geom_col",
+            disabled=not (enabled_dependency and use_geom),
+        )
+        score_field = st.text_input(
+            f"{label} score field",
+            default_score_field,
+            key=f"{key_prefix}_score_field",
+            disabled=not (enabled_dependency and use_geom),
+        )
+    with col2:
+        where_sql = st.text_input(
+            f"{label} filter SQL",
+            "",
+            key=f"{key_prefix}_geom_where",
+            disabled=not (enabled_dependency and use_geom),
+        )
+        buffer_m = st.number_input(
+            f"{label} buffer for point/line (m)",
+            min_value=0,
+            max_value=10000,
+            value=int(default_buffer_m),
+            step=50,
+            key=f"{key_prefix}_geom_buffer_m",
+            disabled=not (enabled_dependency and use_geom),
+        )
+        limit = st.number_input(
+            f"{label} feature limit",
+            min_value=1,
+            max_value=50000,
+            value=5000,
+            step=500,
+            key=f"{key_prefix}_geom_limit",
+            disabled=not (enabled_dependency and use_geom),
+        )
+
+    reducer = st.selectbox(
+        f"{label} overlap reducer",
+        ["mean", "max", "min", "first"],
+        index=0,
+        key=f"{key_prefix}_geom_reducer",
+        disabled=not (enabled_dependency and use_geom),
+    )
+
+    invert_score = False
+    if default_invert:
+        invert_score = st.checkbox(
+            f"{label}: invert score/risk 1-5",
+            value=True,
+            key=f"{key_prefix}_geom_invert",
+            disabled=not (enabled_dependency and use_geom),
+        )
+
+    default_score = st.slider(
+        f"{label} default score outside geometry",
+        1.0,
+        5.0,
+        3.0,
+        0.5,
+        key=f"{key_prefix}_geom_default_score",
+        disabled=not (enabled_dependency and use_geom),
+    )
+
+    return {
+        "enabled": bool(enabled_dependency and use_geom),
+        "table_name": table_name,
+        "geom_col": geom_col,
+        "score_field": score_field,
+        "where_sql": where_sql,
+        "buffer_m": buffer_m,
+        "limit": limit,
+        "reducer": reducer,
+        "invert_score": invert_score,
+        "default_score": default_score,
+    }
+
+
+def render_postgis_geometry_score_controls(
+    *,
+    use_population_capacity: bool,
+    use_infrastructure_capacity: bool,
+    use_service_coverage: bool,
+    use_multi_hazard: bool,
+    use_socioeconomic_equity: bool,
+    use_zoning_compliance: bool,
+) -> dict:
+    """
+    Step 8.7.4:
+    Per-factor PostGIS geometry scoring configs.
+    """
+
+    st.markdown("#### 🗺️ Auto Criteria Score from PostGIS Geometry")
+    st.caption(
+        "สร้าง score map จาก geometry โดยตรง: polygon/line/point ที่มี field คะแนน 1-5 "
+        "จะถูกแปลงเป็น raster suitability. ถ้าไม่ติ๊ก factor นั้นจะใช้ manual/auto-fill score"
+    )
+
+    configs = {
+        "population_capacity": _geometry_score_config_ui(
+            label="Population Capacity",
+            key_prefix="pg_geom_population",
+            default_table="urban_os.population_registry",
+            default_score_field="population_capacity_score",
+            enabled_dependency=use_population_capacity,
+        ),
+        "infrastructure_capacity": _geometry_score_config_ui(
+            label="Infrastructure Capacity",
+            key_prefix="pg_geom_infrastructure",
+            default_table="urban_os.infrastructure_capacity",
+            default_score_field="capacity_score",
+            enabled_dependency=use_infrastructure_capacity,
+        ),
+        "service_coverage": _geometry_score_config_ui(
+            label="Service Coverage",
+            key_prefix="pg_geom_service",
+            default_table="urban_os.service_areas",
+            default_score_field="coverage_score",
+            enabled_dependency=use_service_coverage,
+        ),
+        "multi_hazard": _geometry_score_config_ui(
+            label="Multi-Hazard Risk",
+            key_prefix="pg_geom_hazard",
+            default_table="urban_os.hazard_zones",
+            default_score_field="risk_level",
+            default_invert=True,
+            enabled_dependency=use_multi_hazard,
+        ),
+        "socioeconomic_equity": _geometry_score_config_ui(
+            label="Socioeconomic / Equity",
+            key_prefix="pg_geom_equity",
+            default_table="urban_os.socioeconomic",
+            default_score_field="equity_score",
+            enabled_dependency=use_socioeconomic_equity,
+        ),
+        "zoning_compliance": _geometry_score_config_ui(
+            label="Zoning / Legal Compliance",
+            key_prefix="pg_geom_zoning",
+            default_table="urban_os.planning_controls",
+            default_score_field="zoning_score",
+            enabled_dependency=use_zoning_compliance,
+        ),
+    }
+
+    active = [k for k, v in configs.items() if v.get("enabled")]
+    if active:
+        st.success("เปิด Geometry Score Map: " + ", ".join(active))
+    else:
+        st.info("ยังไม่ได้เปิด Geometry Score Map: ทุกปัจจัยยังใช้ manual/auto-fill score")
+
+    return configs
