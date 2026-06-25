@@ -385,3 +385,126 @@ def count_postgis_features_by_roi(
 
     with engine.connect() as conn:
         return int(conn.execute(sql, params).scalar() or 0)
+
+
+
+def summarize_postgis_numeric_by_roi(
+    *,
+    table_name: str,
+    geom_col: str = "geom",
+    numeric_columns: list[str] | tuple[str, ...],
+    where_sql: str = "",
+    roi=None,
+    agg: str = "avg",
+    section: str = "postgis",
+) -> dict:
+    """
+    Summarize numeric PostGIS fields intersecting the current ROI bbox.
+
+    agg:
+    - avg
+    - sum
+    - max
+    - min
+    """
+
+    from sqlalchemy import text
+
+    table_sql = _quote_identifier(table_name)
+    geom_sql = _quote_identifier(geom_col)
+    where_sql = _validate_where_sql(where_sql)
+
+    agg = str(agg or "avg").lower().strip()
+    if agg not in {"avg", "sum", "max", "min"}:
+        agg = "avg"
+
+    cols = [str(c or "").strip() for c in (numeric_columns or []) if str(c or "").strip()]
+    if not cols:
+        raise ValueError("numeric_columns is empty")
+
+    select_parts = []
+    for col in cols:
+        col_sql = _quote_identifier(col)
+        select_parts.append(f"{agg.upper()}({col_sql})::float AS {col_sql}")
+
+    where_parts = [f"{geom_sql} IS NOT NULL"]
+    params: dict[str, Any] = {}
+
+    bbox_4326 = get_roi_bbox_4326(roi)
+    if bbox_4326:
+        minx, miny, maxx, maxy = bbox_4326
+        where_parts.append(
+            f"ST_Intersects(ST_Transform({geom_sql}, 4326), ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326))"
+        )
+        params.update({"minx": minx, "miny": miny, "maxx": maxx, "maxy": maxy})
+
+    if where_sql:
+        where_parts.append(f"({where_sql})")
+
+    sql = text(f"SELECT {', '.join(select_parts)} FROM {table_sql} WHERE {' AND '.join(where_parts)}")
+
+    engine = get_postgis_engine(section)
+    with engine.connect() as conn:
+        row = conn.execute(sql, params).mappings().first()
+
+    if not row:
+        return {col: None for col in cols}
+
+    return {col: row.get(col) for col in cols}
+
+
+def fetch_postgis_records_by_roi(
+    *,
+    table_name: str,
+    geom_col: str = "geom",
+    fields: list[str] | tuple[str, ...],
+    where_sql: str = "",
+    roi=None,
+    limit: int = 500,
+    section: str = "postgis",
+) -> list[dict]:
+    """
+    Fetch selected non-geometry fields from PostGIS features intersecting ROI.
+    Used for planning_controls, service_areas, hazard_zones, socioeconomic, etc.
+    """
+
+    from sqlalchemy import text
+
+    table_sql = _quote_identifier(table_name)
+    geom_sql = _quote_identifier(geom_col)
+    where_sql = _validate_where_sql(where_sql)
+
+    fields = [str(f or "").strip() for f in (fields or []) if str(f or "").strip()]
+    if not fields:
+        raise ValueError("fields is empty")
+
+    field_sql_parts = []
+    for field in fields:
+        field_sql_parts.append(_quote_identifier(field))
+
+    limit = int(max(1, min(int(limit or 500), 5000)))
+
+    where_parts = [f"{geom_sql} IS NOT NULL"]
+    params: dict[str, Any] = {"limit": limit}
+
+    bbox_4326 = get_roi_bbox_4326(roi)
+    if bbox_4326:
+        minx, miny, maxx, maxy = bbox_4326
+        where_parts.append(
+            f"ST_Intersects(ST_Transform({geom_sql}, 4326), ST_MakeEnvelope(:minx, :miny, :maxx, :maxy, 4326))"
+        )
+        params.update({"minx": minx, "miny": miny, "maxx": maxx, "maxy": maxy})
+
+    if where_sql:
+        where_parts.append(f"({where_sql})")
+
+    sql = text(
+        f"SELECT {', '.join(field_sql_parts)} FROM {table_sql} "
+        f"WHERE {' AND '.join(where_parts)} LIMIT :limit"
+    )
+
+    engine = get_postgis_engine(section)
+    with engine.connect() as conn:
+        rows = list(conn.execute(sql, params).mappings())
+
+    return [dict(row) for row in rows]

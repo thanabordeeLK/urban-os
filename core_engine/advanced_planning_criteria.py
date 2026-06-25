@@ -62,13 +62,35 @@ def score_infrastructure_capacity(scores: dict | None = None) -> float:
     return round(sum(values) / len(values), 2)
 
 
-def score_zoning_compliance(level: str = "neutral") -> float:
+def score_zoning_compliance(
+    level: str = "neutral",
+    criteria_enabled: dict | None = None,
+    criteria_scores: dict | None = None,
+    score_override: float | None = None,
+) -> float:
     """
-    Zoning / Legal Compliance Score
+    Zoning / Legal Compliance Score.
 
-    This factor is intentionally optional and should usually be placed at the end of criteria.
-    If disabled, it has zero weight and does not affect the final suitability score.
+    Step 8.7.3:
+    - Every planning-control subcriterion can be toggled individually.
+    - Unchecked subcriteria do not affect the zoning score.
+    - If no subcriteria are checked, fallback to level mapping or neutral score.
+    - This factor remains intentionally last and optional.
     """
+
+    if score_override is not None:
+        return _clamp_score(score_override, default=3.0)
+
+    criteria_enabled = criteria_enabled or {}
+    criteria_scores = criteria_scores or {}
+
+    active_scores = []
+    for key, enabled in criteria_enabled.items():
+        if enabled:
+            active_scores.append(_clamp_score(criteria_scores.get(key, 3.0), default=3.0))
+
+    if active_scores:
+        return round(sum(active_scores) / len(active_scores), 2)
 
     level = str(level or "neutral").lower().strip()
 
@@ -180,7 +202,10 @@ def get_advanced_planning_scores(
     )
 
     zoning_score_value = score_zoning_compliance(
-        level=zoning_cfg.get("level", "neutral")
+        level=zoning_cfg.get("level", "neutral"),
+        criteria_enabled=zoning_cfg.get("criteria_enabled", {}) or {},
+        criteria_scores=zoning_cfg.get("criteria_scores", {}) or {},
+        score_override=zoning_cfg.get("score_override", None),
     )
 
     return {
@@ -227,6 +252,9 @@ def get_advanced_planning_scores(
             "multi_hazard_safety_score": hazard_score_value,
             "socioeconomic_equity_score": equity_score_value,
             "zoning_score": zoning_score_value,
+            "zoning_source_type": zoning_cfg.get("source_type", "Manual"),
+            "zoning_criteria_enabled": zoning_cfg.get("criteria_enabled", {}) or {},
+            "zoning_criteria_scores": zoning_cfg.get("criteria_scores", {}) or {},
             "population_enabled": bool(pop_cfg.get("enabled", False)),
             "infrastructure_enabled": bool(infra_cfg.get("enabled", False)),
             "service_coverage_enabled": bool(service_cfg.get("enabled", False)),

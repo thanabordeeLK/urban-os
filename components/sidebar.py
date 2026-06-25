@@ -58,6 +58,10 @@ from services.roi_service import get_provinces, get_districts, get_roi
 from components.local_data_manager import get_registry_asset_ids_by_category
 from components.spatial_database_connector import get_spatial_db_layers_by_category
 from components.planning_standards_v2 import render_planning_standards_v2_panel
+from components.advanced_criteria_postgis import (
+    render_advanced_criteria_postgis_autofill,
+    render_zoning_compliance_controls,
+)
 from config.planning_standards import (
     get_standard_profile,
     get_suitability_weight_preset,
@@ -968,6 +972,14 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
     use_zoning_compliance = False
     w_zoning_compliance = 0.0
     zoning_level = "neutral"
+    zoning_criteria_config = {
+        "enabled": False,
+        "source_type": "Manual",
+        "level": "neutral",
+        "criteria_enabled": {},
+        "criteria_scores": {},
+        "applied_last": True,
+    }
 
     # ดึงชั้นข้อมูลจาก Spatial DB Registry มาเป็นตัวเลือก
     spatial_db_roads = get_spatial_db_layers_by_category("roads")
@@ -1441,6 +1453,8 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             "และผังสี/ข้อกฎหมาย โดยปัจจัยผังสีจะอยู่ท้ายสุดและไม่มีผลถ้าไม่ติ๊กเลือก"
         )
 
+        render_advanced_criteria_postgis_autofill(roi=roi)
+
         st.markdown("#### 1) Population Capacity")
         use_population_capacity = st.checkbox(
             "ใช้ Population Capacity เป็นปัจจัยคะแนน",
@@ -1615,32 +1629,19 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             disabled=not use_zoning_compliance,
             help="เมื่อติ๊กเลือก น้ำหนักนี้จะถูก normalize รวมกับปัจจัยอื่นและมีผลต่อ final class",
         )
-        zoning_level_label = st.selectbox(
-            "สถานะความสอดคล้องผังสี/ข้อกฎหมาย",
-            [
-                "ยังไม่ตรวจ / เป็นกลาง",
-                "อนุญาตหรือสอดคล้อง",
-                "อนุญาตแบบมีเงื่อนไข / ต้องทบทวน",
-                "จำกัดมาก",
-                "ห้ามใช้ประโยชน์ / ไม่สอดคล้อง",
-            ],
-            index=0,
-            key="suit_zoning_level_label",
-            disabled=not use_zoning_compliance,
+        zoning_criteria_config = render_zoning_compliance_controls(
+            roi=roi,
+            use_zoning_compliance=use_zoning_compliance,
         )
-        zoning_level_map = {
-            "ยังไม่ตรวจ / เป็นกลาง": "neutral",
-            "อนุญาตหรือสอดคล้อง": "permitted",
-            "อนุญาตแบบมีเงื่อนไข / ต้องทบทวน": "conditional",
-            "จำกัดมาก": "restricted",
-            "ห้ามใช้ประโยชน์ / ไม่สอดคล้อง": "prohibited",
-        }
-        zoning_level = zoning_level_map.get(zoning_level_label, "neutral")
+        zoning_level = zoning_criteria_config.get("level", "neutral")
 
         if not use_zoning_compliance:
             st.info("ยังไม่ใช้ผังสี/ข้อกฎหมาย: weight = 0 ผลวิเคราะห์จะไม่เปลี่ยนจากปัจจัยนี้")
         else:
-            st.warning("เปิดใช้แล้ว: ผล Final Suitability อาจเปลี่ยนตามคะแนนผังสี/ข้อกฎหมายที่เลือก")
+            st.warning(
+                "เปิดใช้แล้ว: ผล Final Suitability อาจเปลี่ยนตาม criteria ที่ติ๊กเลือก "
+                "เช่น permitted_use, prohibited_use, FAR, BCR, OSR, height_limit_m และ buffer_rule"
+            )
 
         # -------------------------------------------------
     # Persistent RUN state
@@ -1802,6 +1803,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                 },
             },
             "zoning_compliance": {
+                **zoning_criteria_config,
                 "enabled": use_zoning_compliance,
                 "level": zoning_level,
                 "applied_last": True,
