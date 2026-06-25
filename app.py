@@ -22,6 +22,7 @@ from components.local_data_manager import render_local_data_manager
 from components.spatial_database_connector import render_spatial_database_connector
 from components.system_diagnostics import render_system_diagnostics_panel
 from components.advanced_criteria_audit import render_advanced_criteria_score_audit
+from components.map_export_composer import render_map_export_composer
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -294,6 +295,13 @@ def main() -> None:
                 selected_province=selected_province,
                 selected_district=selected_district,
             )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
 
     elif selected_mode == "Spatial Database":
         render_spatial_database_connector(
@@ -313,6 +321,13 @@ def main() -> None:
                 selected_province=selected_province,
                 selected_district=selected_district,
             )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
 
     elif selected_mode == "System Diagnostics":
         render_system_diagnostics_panel(
@@ -331,6 +346,13 @@ def main() -> None:
                 is_whole_country=is_whole_country,
                 selected_province=selected_province,
                 selected_district=selected_district,
+            )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
             )
 
     else:
