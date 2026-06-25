@@ -651,17 +651,20 @@ def _scale_denominator(scale_label: str):
     }.get(scale_label)
 
 
+
 def _render_main_map_workspace_controls(layout_config: dict | None = None) -> dict:
     """
-    Main-screen controls for number of map panes and export scale.
-    These widgets are intentionally rendered above the map, not in the sidebar.
+    Main-screen controls for workspace layout only.
+
+    Export scale is controlled per Map View to avoid duplicate controls and to
+    allow View 1 / View 2 / View 3 to use different scales.
     """
 
     layout_config = layout_config or {}
 
     st.markdown("### 🖥️ Map Workspace")
     with st.container():
-        c1, c2, c3, c4 = st.columns([1.25, 1.25, 1.2, 1.0])
+        c1, c2, c3 = st.columns([1.4, 1.0, 3.0])
 
         pane_options = ["1 หน้าจอ", "2 หน้าจอ", "3 หน้าจอ"]
         current_pane_label = st.session_state.get("map_pane_count_label", "1 หน้าจอ")
@@ -676,37 +679,7 @@ def _render_main_map_workspace_controls(layout_config: dict | None = None) -> di
                 key="map_pane_count_label",
             )
 
-        scale_options = _map_scale_options()
-        current_scale = st.session_state.get("map_export_scale_label", layout_config.get("scale_label", "1 : 2,000"))
-        scale_index = scale_options.index(current_scale) if current_scale in scale_options else 0
-
         with c2:
-            scale_label = st.selectbox(
-                "Export scale",
-                scale_options,
-                index=scale_index,
-                key="map_export_scale_label",
-            )
-
-        with c3:
-            paper_preset = st.selectbox(
-                "Export preset",
-                ["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"],
-                index=["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"].index(
-                    st.session_state.get("map_export_paper_preset", layout_config.get("paper_preset", "Screen / Dashboard"))
-                    if st.session_state.get("map_export_paper_preset", layout_config.get("paper_preset", "Screen / Dashboard"))
-                    in ["Screen / Dashboard", "A4 Landscape", "A3 Landscape", "A1 Landscape", "Custom"]
-                    else "Screen / Dashboard"
-                ),
-                key="map_export_paper_preset",
-            )
-
-        with c4:
-            apply_scale = st.checkbox(
-                "ปรับ zoom ตาม scale",
-                value=bool(st.session_state.get("map_apply_scale_to_zoom", layout_config.get("apply_scale_to_zoom", False))),
-                key="map_apply_scale_to_zoom",
-            )
             height = st.number_input(
                 "Map height",
                 min_value=450,
@@ -716,15 +689,18 @@ def _render_main_map_workspace_controls(layout_config: dict | None = None) -> di
                 key="map_panel_height",
             )
 
+        with c3:
+            st.caption(
+                "ปรับ Scale และการทำงาน/ผลวิเคราะห์ได้แยกกันในแต่ละ Map View ด้านล่าง"
+            )
+
     pane_count = {"1 หน้าจอ": 1, "2 หน้าจอ": 2, "3 หน้าจอ": 3}.get(pane_label, 1)
 
     return {
         "pane_count": pane_count,
-        "scale_label": scale_label,
-        "scale_denominator": _scale_denominator(scale_label),
-        "apply_scale_to_zoom": bool(apply_scale),
-        "paper_preset": paper_preset,
         "height": int(height),
+        # kept for backward compatibility only; not shown as top controls
+        "paper_preset": st.session_state.get("map_export_paper_preset", "Screen / Dashboard"),
     }
 
 
@@ -823,6 +799,46 @@ def _add_workspace_result_layer(Map, layer_choice: str):
     return Map
 
 
+
+def _apply_scale_to_existing_map(Map, scale_label: str, apply_scale: bool):
+    """
+    Apply an approximate zoom level to an already-built map.
+
+    Needed for Current Mode Layers, because that pane clones the current mode map
+    instead of rebuilding it from scratch.
+    """
+
+    if not apply_scale:
+        return Map
+
+    scale_denom = _scale_denominator(scale_label)
+    if not scale_denom:
+        return Map
+
+    try:
+        center = getattr(Map, "location", None) or st.session_state.get("urban_os_map_center", [15.0, 100.0])
+        lat = center[0] if isinstance(center, (list, tuple)) and center else 15.0
+        approx_zoom = estimate_leaflet_zoom_from_scale(scale_denom, latitude=lat)
+
+        if approx_zoom is not None:
+            try:
+                Map.options["zoom"] = approx_zoom
+            except Exception:
+                pass
+            try:
+                Map.options["zoom_start"] = approx_zoom
+            except Exception:
+                pass
+            try:
+                Map.zoom_start = approx_zoom
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return Map
+
+
 def _create_independent_view_map(
     *,
     original_map,
@@ -846,6 +862,11 @@ def _create_independent_view_map(
 
     if layer_choice == "Current Mode Layers":
         panel_map = clone_map_for_panel(original_map)
+        panel_map = _apply_scale_to_existing_map(
+            panel_map,
+            scale_label=scale_label,
+            apply_scale=apply_scale,
+        )
         panel_map.export_scale_label = scale_label
         panel_map.export_paper_preset = paper_preset
         add_export_scale_overlay(panel_map, scale_label=scale_label, paper_preset=paper_preset)
@@ -960,9 +981,9 @@ def render_map_workspace(
             view_config = _render_view_controls(
                 idx=idx,
                 default_basemap=getattr(Map, "basemap_choice", "OpenStreetMap"),
-                global_scale_label=layout_config.get("scale_label", "Auto / ตาม zoom"),
+                global_scale_label=st.session_state.get(f"map_view_{idx}_scale_label", "1 : 2,000"),
                 global_paper_preset=layout_config.get("paper_preset", "Screen / Dashboard"),
-                global_apply_scale=layout_config.get("apply_scale_to_zoom", False),
+                global_apply_scale=bool(st.session_state.get(f"map_view_{idx}_apply_scale", True)),
             )
             panel_map = _create_independent_view_map(
                 original_map=Map,
@@ -972,8 +993,13 @@ def render_map_workspace(
                 selected_province=selected_province,
                 selected_district=selected_district,
             )
+            scale_key = str(view_config.get("scale_label", "")).replace(" ", "").replace(":", "_").replace(",", "")
+            layer_key = str(view_config.get("layer_choice", "")).replace(" ", "_").replace("/", "_")
+            basemap_key = str(view_config.get("basemap_choice", "")).replace(" ", "_")
+            apply_key = "scale_on" if view_config.get("apply_scale_to_zoom") else "scale_off"
+
             render_map(
                 panel_map,
                 height=height,
-                key_suffix=f"view_{idx}_{view_config.get('layer_choice','').replace(' ', '_')}",
+                key_suffix=f"view_{idx}_{layer_key}_{basemap_key}_{scale_key}_{apply_key}",
             )
