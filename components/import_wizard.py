@@ -14,6 +14,8 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
+from components.imported_layer_overlay import render_imported_layer_overlay_panel
+
 try:
     from services.spatial_db_service import import_geojson_to_postgis, test_postgis_connection
 except Exception:
@@ -439,7 +441,7 @@ def render_import_wizard(*, roi=None, selected_province: str = "", selected_dist
     area_name = "ทั้งประเทศไทย" if is_whole_country else f"{selected_district}, {selected_province}"
     st.info(f"พื้นที่ทำงานปัจจุบัน: {area_name}")
 
-    tab_upload, tab_registry, tab_postgis = st.tabs(["📤 Upload & Preview", "📋 Imported Registry", "🐘 PostGIS Import Guide"])
+    tab_upload, tab_registry, tab_overlay, tab_postgis = st.tabs(["📤 Upload & Preview", "📋 Imported Registry", "🧩 Overlay", "🐘 PostGIS Import Guide"])
 
     with tab_upload:
         uploaded = st.file_uploader(
@@ -562,6 +564,9 @@ def render_import_wizard(*, roi=None, selected_province: str = "", selected_dist
             st.markdown("#### Last Imported Layer")
             st.caption(st.session_state.get("import_wizard_last_layer_name", ""))
             _render_geojson_downloads(last_geojson, _safe_filename(f"urban_os_last_import_{st.session_state.get('import_wizard_last_layer_name','layer')}"))
+
+    with tab_overlay:
+        render_imported_layer_overlay_panel(roi=roi)
 
     with tab_postgis:
         _render_direct_postgis_import()

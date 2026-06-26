@@ -20,6 +20,7 @@ from components.map_renderer import create_base_map, add_boundary, render_map, r
 from components.indicator_cards import render_indicator_cards
 from components.local_data_manager import render_local_data_manager
 from components.import_wizard import render_import_wizard
+from components.imported_layer_overlay import add_imported_layer_overlays
 from components.spatial_database_connector import render_spatial_database_connector
 from components.system_diagnostics import render_system_diagnostics_panel
 from components.advanced_criteria_audit import render_advanced_criteria_score_audit
@@ -278,6 +279,14 @@ def main() -> None:
             is_whole_country=is_whole_country,
             settings=state.get("multi_agent_settings", {}) or {},
         )
+
+    # -----------------------------------------------------
+    # 8.8.2 Imported Layer Overlay
+    # -----------------------------------------------------
+    add_imported_layer_overlays(
+        Map=Map,
+        roi=roi,
+    )
 
     # -----------------------------------------------------
     # 9. Render Map / Data-management panels
