@@ -258,8 +258,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Spatial Database", "System Diagnostics", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "hdd-network", "activity", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Spatial Database", "System Diagnostics", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "hdd-network", "activity", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -364,6 +364,19 @@ def render_sidebar() -> dict:
             )
 
             st.caption("จัดการ GEE Asset ID และข้อมูลเฉพาะพื้นที่ แล้วนำไปใช้กับ Suitability Analysis")
+
+        # -------------------------------------------------
+        # Import Wizard Mode
+        # -------------------------------------------------
+        elif selected_mode == "Import Wizard":
+            st.markdown("### 📥 Import Wizard")
+
+            basemap_choice = render_basemap_selector(
+                key="import_wizard_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("นำเข้า Shapefile ZIP, GeoJSON, KML/KMZ และ CSV พิกัด X,Y")
 
         # -------------------------------------------------
         # Spatial Database Mode

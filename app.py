@@ -19,6 +19,7 @@ from components.sidebar import render_sidebar
 from components.map_renderer import create_base_map, add_boundary, render_map, render_map_workspace
 from components.indicator_cards import render_indicator_cards
 from components.local_data_manager import render_local_data_manager
+from components.import_wizard import render_import_wizard
 from components.spatial_database_connector import render_spatial_database_connector
 from components.system_diagnostics import render_system_diagnostics_panel
 from components.advanced_criteria_audit import render_advanced_criteria_score_audit
@@ -247,6 +248,13 @@ def main() -> None:
         pass
 
     # -----------------------------------------------------
+    # 9.1 Mode: Import Wizard
+    # -----------------------------------------------------
+    elif selected_mode == "Import Wizard":
+        # ใช้เฉพาะ base map + boundary เพื่อให้เห็นพื้นที่อ้างอิง
+        pass
+
+    # -----------------------------------------------------
     # 9.5 Mode: Spatial Database
     # -----------------------------------------------------
     elif selected_mode == "Spatial Database":
@@ -287,6 +295,32 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=True):
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
+
+    elif selected_mode == "Import Wizard":
+        render_import_wizard(
+            roi=roi,
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=False):
             render_map_workspace(
                 Map,
                 map_layout_config,
@@ -440,6 +474,10 @@ def main() -> None:
         )
 
     elif selected_mode == "Local Data Manager":
+        # Already rendered above the map in data-management panel mode.
+        pass
+
+    elif selected_mode == "Import Wizard":
         # Already rendered above the map in data-management panel mode.
         pass
 
