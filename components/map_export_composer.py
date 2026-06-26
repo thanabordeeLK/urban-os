@@ -312,10 +312,12 @@ def render_map_export_composer(
     Step 8.7.6: Map Export Composer + GIS Export
     """
 
-    with st.expander("🖨️ Map Export Composer / GIS Export", expanded=False):
-        st.caption(
-            "ส่งออกแผนที่และข้อมูล GIS สำหรับนำไปใช้ต่อใน QGIS, ArcGIS, GeoLibre, GeoServer หรือรายงาน"
-        )
+    st.markdown("### 🖨️ Map Export Composer / GIS Export")
+    st.caption(
+        "ส่งออกแผนที่และข้อมูล GIS สำหรับนำไปใช้ต่อใน QGIS, ArcGIS, GeoLibre, GeoServer หรือรายงาน"
+    )
+
+    with st.container():
 
         base_name = _safe_filename(
             f"urban_os_{selected_province or 'thailand'}_{selected_district or 'area'}"
