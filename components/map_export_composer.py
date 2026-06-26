@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 WGS84_PRJ = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]"""
@@ -1274,12 +1275,159 @@ async function downloadPng() {{
 </html>"""
 
 
+
+
+def _view_config_from_session(view_idx: int) -> dict:
+    """
+    Build a Map View config from current session_state.
+    """
+
+    return {
+        "layer_choice": st.session_state.get(f"map_view_{view_idx}_layer_choice", "Current Mode Layers"),
+        "basemap_choice": st.session_state.get(f"map_view_{view_idx}_basemap", "OpenStreetMap"),
+        "scale_label": st.session_state.get(f"map_view_{view_idx}_scale_label", "1 : 2,000"),
+        "apply_scale_to_zoom": bool(st.session_state.get(f"map_view_{view_idx}_apply_scale", True)),
+        "paper_preset": st.session_state.get("map_export_paper_preset", "Screen / Dashboard"),
+    }
+
+
+def _build_map_for_selected_view(
+    *,
+    original_map,
+    view_idx: int,
+    roi=None,
+    is_whole_country: bool = False,
+    selected_province: str = "",
+    selected_district: str = "",
+):
+    """
+    Rebuild the selected Map View for pixel capture.
+    """
+
+    try:
+        from components.map_renderer import _create_independent_view_map
+
+        return _create_independent_view_map(
+            original_map=original_map,
+            view_config=_view_config_from_session(view_idx),
+            view_idx=view_idx,
+            roi=roi,
+            is_whole_country=is_whole_country,
+            selected_province=selected_province,
+            selected_district=selected_district,
+        )
+    except Exception as exc:
+        st.warning(
+            "ไม่สามารถ rebuild Map View สำหรับ capture แยกได้ "
+            f"จึงใช้ current map layer stack แทน: {exc}"
+        )
+        return original_map
+
+
+def render_one_click_png_capture(
+    *,
+    Map,
+    base_name: str,
+    roi=None,
+    selected_province: str = "",
+    selected_district: str = "",
+    is_whole_country: bool = False,
+) -> None:
+    """
+    Step 8.7.10: One-click browser-side PNG export from selected Map View.
+    """
+
+    st.markdown("#### One-Click True PNG Export จาก Map View")
+    st.caption(
+        "เลือก Map View ที่ต้องการ แล้วกด Export PNG ในกรอบ preview เพื่อดาวน์โหลดภาพจาก browser"
+    )
+
+    pane_count = _get_visible_pane_count()
+    view_options = [f"Map View {idx}" for idx in range(1, pane_count + 1)]
+
+    c1, c2 = st.columns([1.1, 1.2])
+    with c1:
+        selected_view_label = st.selectbox(
+            "เลือก Map View ที่จะ export",
+            view_options,
+            index=0,
+            key="one_click_png_view_label",
+        )
+        view_idx = int(selected_view_label.replace("Map View ", ""))
+
+        preset = st.selectbox(
+            "PNG canvas size",
+            list(PIXEL_CAPTURE_PRESETS.keys()),
+            index=0,
+            key="one_click_png_preset",
+        )
+
+    with c2:
+        title = st.text_input(
+            "ชื่อภาพ PNG",
+            value=st.session_state.get("pixel_capture_title", "Urban OS Map PNG Export"),
+            key="one_click_png_title",
+        )
+        subtitle = st.text_input(
+            "คำอธิบายภาพ",
+            value=f"{selected_province or 'Thailand'} / {selected_district or 'Selected area'}",
+            key="one_click_png_subtitle",
+        )
+
+    notes = st.text_area(
+        "หมายเหตุในภาพ",
+        value="One-click browser-side PNG capture from Urban OS Map Workspace.",
+        key="one_click_png_notes",
+        height=70,
+    )
+
+    capture_map = _build_map_for_selected_view(
+        original_map=Map,
+        view_idx=view_idx,
+        roi=roi,
+        is_whole_country=is_whole_country,
+        selected_province=selected_province,
+        selected_district=selected_district,
+    )
+
+    html = _build_pixel_capture_html(
+        Map=capture_map,
+        title=title,
+        subtitle=subtitle,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        preset=preset,
+        notes=notes,
+        include_toolbar=True,
+    )
+
+    width, height = PIXEL_CAPTURE_PRESETS.get(preset, PIXEL_CAPTURE_PRESETS["Dashboard 16:9 / 1920x1080"])
+
+    st.success(
+        "กด `Export PNG (experimental)` ในกรอบ preview ด้านล่างเพื่อดาวน์โหลด PNG "
+        "ถ้า tile บางแหล่งติด CORS ให้ใช้ Print / Save as PDF หรือดาวน์โหลด HTML ไปเปิดใน Chrome/Edge"
+    )
+
+    preview_height = min(900, max(620, int(height * 0.55)))
+    components.html(html, height=preview_height, scrolling=True)
+
+    st.download_button(
+        "⬇️ Download Same Capture HTML",
+        data=html.encode("utf-8"),
+        file_name=f"{base_name}_map_view_{view_idx}_one_click_png_capture.html",
+        mime="text/html",
+        use_container_width=True,
+    )
+
+
 def render_pixel_perfect_capture(
     *,
     Map,
     base_name: str,
+    roi=None,
     selected_province: str,
     selected_district: str,
+    is_whole_country: bool = False,
 ) -> None:
     """
     Step 8.7.9: Pixel-Perfect Map Capture.
@@ -1294,6 +1442,18 @@ def render_pixel_perfect_capture(
         "สร้าง HTML สำหรับ capture ภาพแผนที่จริงจาก browser ตาม tile/layer ที่โหลดในแผนที่ "
         "โดยไม่เพิ่ม dependency หนักบน Streamlit Cloud"
     )
+
+    render_one_click_png_capture(
+        Map=Map,
+        base_name=base_name,
+        roi=roi,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        is_whole_country=is_whole_country,
+    )
+
+    st.markdown("---")
+    st.markdown("#### Advanced / Standalone Pixel Capture HTML")
 
     c1, c2 = st.columns([1.35, 1.0])
     with c1:
@@ -1416,8 +1576,10 @@ def render_map_export_composer(
             render_pixel_perfect_capture(
                 Map=Map,
                 base_name=base_name,
+                roi=roi,
                 selected_province=selected_province,
                 selected_district=selected_district,
+                is_whole_country=is_whole_country,
             )
 
         with tab_print:
