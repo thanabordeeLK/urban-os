@@ -930,7 +930,13 @@ def render_print_layout_composer(
         else:
             st.warning(pdf_error or "ไม่สามารถสร้าง PDF ได้")
 
-    with st.expander("Preview HTML source / Method note", expanded=False):
+    show_html_preview = st.checkbox(
+        "แสดง Preview HTML source / Method note",
+        value=False,
+        key="print_layout_show_html_preview",
+        help="ใช้ดู HTML ที่ระบบสร้างสำหรับตรวจสอบ layout โดยไม่ใช้ expander เพื่อเลี่ยง nested expander error",
+    )
+    if show_html_preview:
         st.code(html[:5000], language="html")
         if len(html) > 5000:
             st.caption("แสดงเฉพาะ HTML 5,000 ตัวอักษรแรก")
