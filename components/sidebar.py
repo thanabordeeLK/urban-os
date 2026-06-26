@@ -1085,6 +1085,14 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
     facility_db_where = ""
     facility_db_limit = 5000
 
+    imported_last_geojson = st.session_state.get("import_wizard_last_geojson")
+    imported_last_layer_name = st.session_state.get("import_wizard_last_layer_name", "")
+    imported_last_category = st.session_state.get("import_wizard_last_category", "")
+    imported_last_feature_count = len((imported_last_geojson or {}).get("features", []) or []) if isinstance(imported_last_geojson, dict) else 0
+    road_imported_max_features = 5000
+    facility_imported_max_features = 5000
+    constraint_imported_max_features = 5000
+
     use_population_capacity = False
     w_population_capacity = 0.0
     current_population = 0
@@ -1286,10 +1294,28 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
 
         road_source_type_label = st.selectbox(
             "แหล่งข้อมูลถนน",
-            ["GEE Asset ID", "PostGIS table"],
+            ["GEE Asset ID", "PostGIS table", "Imported session layer"],
             index=0,
             key="suit_road_source_type",
+            help="Imported session layer = ใช้ไฟล์ล่าสุดที่อัปโหลดใน Import Wizard เป็นถนน",
         )
+
+        if road_source_type_label == "Imported session layer":
+            if imported_last_feature_count:
+                st.success(
+                    f"Imported layer พร้อมใช้เป็นถนน: {imported_last_layer_name or '-'} "
+                    f"({imported_last_feature_count:,} features / {imported_last_category or '-'})"
+                )
+            else:
+                st.warning("ยังไม่มี imported layer ใน session ให้ไปที่ Import Wizard > Upload & Preview ก่อน")
+            road_imported_max_features = st.number_input(
+                "Imported road max features",
+                min_value=1,
+                max_value=50000,
+                value=min(max(imported_last_feature_count, 1), 5000),
+                step=500,
+                key="suit_road_imported_max_features",
+            )
 
         road_db_layer_options = ["Manual table"] + [item.get("layer_name", "") for item in spatial_db_roads]
         road_db_layer_name = st.selectbox(
@@ -1345,6 +1371,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                 "users/yourname/local_roads"
             ),
             help="รองรับ ee.FeatureCollection ที่เป็น line หรือ polygon ของถนนจาก Google Earth Engine Assets",
+            disabled=(road_source_type_label != "GEE Asset ID"),
         )
 
         road_buffer_m = st.number_input(
@@ -1371,6 +1398,11 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
 
         if use_road_accessibility and road_source_type_label == "PostGIS table":
             st.caption(f"เปิดใช้ Road Accessibility จาก PostGIS table: {road_db_table}")
+        elif use_road_accessibility and road_source_type_label == "Imported session layer":
+            if imported_last_feature_count:
+                st.caption(f"เปิดใช้ Road Accessibility จาก Imported Session: {imported_last_feature_count:,} features")
+            else:
+                st.warning("เปิดใช้ถนนจาก Imported Session แล้ว แต่ยังไม่มี imported layer")
         elif use_road_accessibility and road_asset_ids:
             st.caption(f"เปิดใช้ Road Accessibility: {len(road_asset_ids)} ชั้นข้อมูล")
         elif use_road_accessibility and invalid_road_asset_ids:
@@ -1392,10 +1424,28 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
 
         facility_source_type_label = st.selectbox(
             "แหล่งข้อมูลบริการสาธารณะ",
-            ["GEE Asset ID", "PostGIS table"],
+            ["GEE Asset ID", "PostGIS table", "Imported session layer"],
             index=0,
             key="suit_facility_source_type",
+            help="Imported session layer = ใช้ไฟล์ล่าสุดที่อัปโหลดใน Import Wizard เป็นจุด/พื้นที่บริการสาธารณะ",
         )
+
+        if facility_source_type_label == "Imported session layer":
+            if imported_last_feature_count:
+                st.success(
+                    f"Imported layer พร้อมใช้เป็นบริการสาธารณะ: {imported_last_layer_name or '-'} "
+                    f"({imported_last_feature_count:,} features / {imported_last_category or '-'})"
+                )
+            else:
+                st.warning("ยังไม่มี imported layer ใน session ให้ไปที่ Import Wizard > Upload & Preview ก่อน")
+            facility_imported_max_features = st.number_input(
+                "Imported facility max features",
+                min_value=1,
+                max_value=50000,
+                value=min(max(imported_last_feature_count, 1), 5000),
+                step=500,
+                key="suit_facility_imported_max_features",
+            )
 
         facility_db_layer_options = ["Manual table"] + [item.get("layer_name", "") for item in spatial_db_facilities]
         facility_db_layer_name = st.selectbox(
@@ -1451,6 +1501,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                 "users/yourname/hospitals_schools_markets"
             ),
             help="รองรับ ee.FeatureCollection ที่เป็น point/line/polygon ของบริการสาธารณะจาก Google Earth Engine Assets",
+            disabled=(facility_source_type_label != "GEE Asset ID"),
         )
 
         facility_buffer_m = st.number_input(
@@ -1477,6 +1528,11 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
 
         if use_public_facilities and facility_source_type_label == "PostGIS table":
             st.caption(f"เปิดใช้ Public Facility Proximity จาก PostGIS table: {facility_db_table}")
+        elif use_public_facilities and facility_source_type_label == "Imported session layer":
+            if imported_last_feature_count:
+                st.caption(f"เปิดใช้ Public Facility Proximity จาก Imported Session: {imported_last_feature_count:,} features")
+            else:
+                st.warning("เปิดใช้บริการสาธารณะจาก Imported Session แล้ว แต่ยังไม่มี imported layer")
         elif use_public_facilities and facility_asset_ids:
             st.caption(f"เปิดใช้ Public Facility Proximity: {len(facility_asset_ids)} ชั้นข้อมูล")
         elif use_public_facilities and invalid_facility_asset_ids:
@@ -1566,6 +1622,60 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             help="ใช้ฐานข้อมูล WCMC/WDPA/current/polygons จาก Google Earth Engine",
         )
 
+        constraint_source_type_label = st.selectbox(
+            "แหล่งข้อมูลพื้นที่กันออกเพิ่มเติม",
+            ["GEE Asset ID", "PostGIS table", "Imported session layer"],
+            index=0,
+            key="suit_constraint_source_type",
+            help="Imported session layer = ใช้ไฟล์ล่าสุดที่อัปโหลดใน Import Wizard เป็นพื้นที่กันออก",
+        )
+
+        if constraint_source_type_label == "Imported session layer":
+            if imported_last_feature_count:
+                st.success(
+                    f"Imported layer พร้อมใช้เป็น hard constraint: {imported_last_layer_name or '-'} "
+                    f"({imported_last_feature_count:,} features / {imported_last_category or '-'})"
+                )
+            else:
+                st.warning("ยังไม่มี imported layer ใน session ให้ไปที่ Import Wizard > Upload & Preview ก่อน")
+            constraint_imported_max_features = st.number_input(
+                "Imported constraint max features",
+                min_value=1,
+                max_value=50000,
+                value=min(max(imported_last_feature_count, 1), 5000),
+                step=500,
+                key="suit_constraint_imported_max_features",
+            )
+
+        protected_db_table = st.text_input(
+            "PostGIS protected/constraint table",
+            value="public.protected_areas",
+            key="suit_protected_db_table",
+            disabled=(constraint_source_type_label != "PostGIS table"),
+        )
+        protected_db_geom_col = st.text_input(
+            "Protected geometry column",
+            value="geom",
+            key="suit_protected_db_geom_col",
+            disabled=(constraint_source_type_label != "PostGIS table"),
+        )
+        protected_db_where = st.text_input(
+            "Protected filter SQL",
+            value="",
+            key="suit_protected_db_where",
+            disabled=(constraint_source_type_label != "PostGIS table"),
+            placeholder="เช่น status = 'restricted'",
+        )
+        protected_db_limit = st.number_input(
+            "Protected feature limit",
+            min_value=1,
+            max_value=50000,
+            value=5000,
+            step=500,
+            key="suit_protected_db_limit",
+            disabled=(constraint_source_type_label != "PostGIS table"),
+        )
+
         forest_asset_text = st.text_area(
             "GEE Asset ID ของป่าสงวน/ป่าอนุรักษ์/พื้นที่ห้ามพัฒนา",
             value="",
@@ -1577,6 +1687,7 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
                 "users/yourname/protected_forest"
             ),
             help="รองรับ ee.FeatureCollection ที่อัปโหลดไว้ใน Google Earth Engine Assets",
+            disabled=(constraint_source_type_label != "GEE Asset ID"),
         )
 
         forest_buffer_m = st.number_input(
@@ -1592,10 +1703,15 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
         forest_asset_ids, invalid_forest_asset_ids = _split_valid_invalid_asset_ids(forest_asset_text)
         _render_invalid_asset_warning("Forest / Constraint Asset ID", invalid_forest_asset_ids)
 
-        if use_wdpa or forest_asset_ids:
+        if use_wdpa or forest_asset_ids or constraint_source_type_label in {"PostGIS table", "Imported session layer"}:
+            custom_label = f"Custom Assets={len(forest_asset_ids)}"
+            if constraint_source_type_label == "PostGIS table":
+                custom_label = f"PostGIS={protected_db_table}"
+            elif constraint_source_type_label == "Imported session layer":
+                custom_label = f"Imported Session={imported_last_feature_count:,} features" if imported_last_feature_count else "Imported Session=ยังไม่มีข้อมูล"
             st.caption(
                 f"เปิดใช้พื้นที่กันออก: WDPA={'เปิด' if use_wdpa else 'ปิด'}, "
-                f"Custom Assets={len(forest_asset_ids)} ชั้นข้อมูล"
+                f"{custom_label}"
             )
         else:
             st.warning("ยังไม่ได้เปิดใช้พื้นที่คุ้มครอง/ป่าสงวนเป็น hard constraint")
@@ -1885,12 +2001,22 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             "use_wdpa": use_wdpa,
             "asset_ids": forest_asset_ids,
             "buffer_m": forest_buffer_m,
-            "source_type": "postgis" if constraint_source_type_label == "PostGIS table" else "gee_asset",
+            "source_type": (
+                "postgis" if constraint_source_type_label == "PostGIS table"
+                else "imported_session" if constraint_source_type_label == "Imported session layer"
+                else "gee_asset"
+            ),
             "db_config": {
                 "table_name": protected_db_table,
                 "geom_col": protected_db_geom_col,
                 "where_sql": protected_db_where,
                 "limit": protected_db_limit,
+            },
+            "imported_config": {
+                "session_key": "import_wizard_last_geojson",
+                "max_features": constraint_imported_max_features,
+                "layer_name": imported_last_layer_name,
+                "category": imported_last_category,
             },
         },
         "road_config": {
@@ -1898,12 +2024,22 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             "asset_ids": road_asset_ids,
             "buffer_m": road_buffer_m,
             "max_distance_m": road_max_distance_m,
-            "source_type": "postgis" if road_source_type_label == "PostGIS table" else "gee_asset",
+            "source_type": (
+                "postgis" if road_source_type_label == "PostGIS table"
+                else "imported_session" if road_source_type_label == "Imported session layer"
+                else "gee_asset"
+            ),
             "db_config": {
                 "table_name": road_db_table,
                 "geom_col": road_db_geom_col,
                 "where_sql": road_db_where,
                 "limit": road_db_limit,
+            },
+            "imported_config": {
+                "session_key": "import_wizard_last_geojson",
+                "max_features": road_imported_max_features,
+                "layer_name": imported_last_layer_name,
+                "category": imported_last_category,
             },
         },
         "facility_config": {
@@ -1911,12 +2047,22 @@ def render_suitability_controls(roi=None, is_whole_country: bool = False) -> dic
             "asset_ids": facility_asset_ids,
             "buffer_m": facility_buffer_m,
             "max_distance_m": facility_max_distance_m,
-            "source_type": "postgis" if facility_source_type_label == "PostGIS table" else "gee_asset",
+            "source_type": (
+                "postgis" if facility_source_type_label == "PostGIS table"
+                else "imported_session" if facility_source_type_label == "Imported session layer"
+                else "gee_asset"
+            ),
             "db_config": {
                 "table_name": facility_db_table,
                 "geom_col": facility_db_geom_col,
                 "where_sql": facility_db_where,
                 "limit": facility_db_limit,
+            },
+            "imported_config": {
+                "session_key": "import_wizard_last_geojson",
+                "max_features": facility_imported_max_features,
+                "layer_name": imported_last_layer_name,
+                "category": imported_last_category,
             },
         },
         "advanced_config": {

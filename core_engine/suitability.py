@@ -6,7 +6,7 @@ from config.datasets import DATASET_CATALOG
 from components.map_renderer import add_custom_legend
 from services.gee_service import safe_clip
 from core_engine.advanced_planning_criteria import get_advanced_planning_scores
-from services.spatial_db_service import fetch_postgis_as_ee_feature_collection
+from services.spatial_db_service import fetch_postgis_as_ee_feature_collection, geojson_to_ee_feature_collection
 from config.planning_standards import get_suitability_weight_preset
 
 
@@ -859,14 +859,14 @@ def get_protected_area_constraint(
 
     source_type = str(constraint_config.get("source_type", "gee_asset") or "gee_asset")
 
-    if source_type == "postgis":
-        db_collections, has_db_source, source_meta = _get_feature_collections_from_config(
+    if source_type in {"postgis", "imported_session"}:
+        source_collections, has_source, source_meta = _get_feature_collections_from_config(
             roi=roi,
             config=constraint_config,
             buffer_m=0,
             source_label="Protected / Forest Constraint",
         )
-        collections.extend(db_collections)
+        collections.extend(source_collections)
     else:
         for asset_id in asset_ids:
             asset_id = str(asset_id).strip()
@@ -901,6 +901,56 @@ def get_protected_area_constraint(
 
 
 
+
+
+def _get_imported_session_geojson(config: dict | None = None) -> dict | None:
+    """
+    Resolve imported session GeoJSON from Import Wizard.
+
+    Default key:
+    - import_wizard_last_geojson
+    """
+
+    config = config or {}
+    imported_config = config.get("imported_config", {}) or {}
+    session_key = str(imported_config.get("session_key", "import_wizard_last_geojson") or "import_wizard_last_geojson")
+    geojson = st.session_state.get(session_key)
+    if not isinstance(geojson, dict):
+        return None
+    if geojson.get("type") != "FeatureCollection":
+        return None
+    return geojson
+
+
+def _config_has_imported_session_source(config: dict | None = None) -> bool:
+    geojson = _get_imported_session_geojson(config)
+    return bool((geojson or {}).get("features"))
+
+
+def _config_has_any_feature_source(config: dict | None = None) -> bool:
+    """
+    Check whether a factor config has a valid feature source.
+
+    Supports:
+    - gee_asset
+    - postgis
+    - imported_session
+    """
+
+    config = config or {}
+    source_type = str(config.get("source_type", "gee_asset") or "gee_asset")
+
+    if source_type == "postgis":
+        db_table = str((config.get("db_config", {}) or {}).get("table_name", "") or "").strip()
+        return bool(db_table)
+
+    if source_type == "imported_session":
+        return _config_has_imported_session_source(config)
+
+    asset_ids = clean_ee_asset_ids(config.get("asset_ids") or [])
+    return bool(asset_ids)
+
+
 def _get_feature_collections_from_config(
     *,
     roi,
@@ -910,9 +960,10 @@ def _get_feature_collections_from_config(
     source_label: str = "layer",
 ) -> tuple[list[ee.FeatureCollection], bool, dict]:
     """
-    Build FeatureCollections from either:
+    Build FeatureCollections from:
     - GEE Asset ID
-    - PostGIS table from Spatial Database Bridge
+    - PostGIS table from Spatial Database Bridge / Import Wizard
+    - Imported session GeoJSON from Import Wizard
 
     Returns:
         collections, has_valid_source, metadata
@@ -948,6 +999,34 @@ def _get_feature_collections_from_config(
             return collections, True, metadata
         except Exception as exc:
             st.sidebar.warning(f"โหลด {source_label} จาก PostGIS ไม่สำเร็จ: {exc}")
+            return [], False, metadata
+
+    if source_type == "imported_session":
+        imported_config = config.get("imported_config", {}) or {}
+        max_features = int(imported_config.get("max_features", 5000) or 5000)
+        geojson = _get_imported_session_geojson(config)
+
+        if not geojson:
+            return [], False, metadata
+
+        try:
+            fc = geojson_to_ee_feature_collection(geojson, max_features=max_features)
+            fc = fc.filterBounds(get_roi_geometry(roi))
+            if buffer_m > 0:
+                fc = fc.map(lambda f: f.buffer(buffer_m))
+            collections.append(fc)
+            metadata.update(
+                {
+                    "source_type": "imported_session",
+                    "feature_count": len(geojson.get("features", []) or []),
+                    "max_features": max_features,
+                    "layer_name": st.session_state.get("import_wizard_last_layer_name", ""),
+                    "category": st.session_state.get("import_wizard_last_category", ""),
+                }
+            )
+            return collections, True, metadata
+        except Exception as exc:
+            st.sidebar.warning(f"โหลด {source_label} จาก Imported Session ไม่สำเร็จ: {exc}")
             return [], False, metadata
 
     asset_ids = clean_ee_asset_ids(config.get(asset_id_key) or [])
@@ -1007,19 +1086,11 @@ def build_suitability_model(
 
     road_config = road_config or {}
     road_source_type = str(road_config.get("source_type", "gee_asset") or "gee_asset")
-    road_asset_ids = clean_ee_asset_ids(road_config.get("asset_ids") or [])
-    road_db_table = str((road_config.get("db_config", {}) or {}).get("table_name", "") or "").strip()
-    road_enabled = bool(road_config.get("enabled", False)) and (
-        bool(road_asset_ids) if road_source_type != "postgis" else bool(road_db_table)
-    )
+    road_enabled = bool(road_config.get("enabled", False)) and _config_has_any_feature_source(road_config)
 
     facility_config = facility_config or {}
     facility_source_type = str(facility_config.get("source_type", "gee_asset") or "gee_asset")
-    facility_asset_ids = clean_ee_asset_ids(facility_config.get("asset_ids") or [])
-    facility_db_table = str((facility_config.get("db_config", {}) or {}).get("table_name", "") or "").strip()
-    facility_enabled = bool(facility_config.get("enabled", False)) and (
-        bool(facility_asset_ids) if facility_source_type != "postgis" else bool(facility_db_table)
-    )
+    facility_enabled = bool(facility_config.get("enabled", False)) and _config_has_any_feature_source(facility_config)
 
     heat_config = heat_config or {}
     heat_enabled = bool(heat_config.get("enabled", False))
