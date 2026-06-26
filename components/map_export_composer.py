@@ -305,6 +305,637 @@ def _workspace_summary_markdown(
     return "\n".join(lines)
 
 
+
+
+# ---------------------------------------------------------
+# Print Layout Composer helpers
+# ---------------------------------------------------------
+PRINT_LAYOUT_PRESETS = {
+    "Dashboard 16:9": {"png_size": (1920, 1080), "pdf": "A4"},
+    "A4 Landscape": {"png_size": (1754, 1240), "pdf": "A4"},
+    "A3 Landscape": {"png_size": (2480, 1754), "pdf": "A3"},
+    "A1 Landscape": {"png_size": (3508, 2480), "pdf": "A1"},
+}
+
+
+def _get_visible_pane_count() -> int:
+    pane_label = st.session_state.get("map_pane_count_label", "1 หน้าจอ")
+    return {"1 หน้าจอ": 1, "2 หน้าจอ": 2, "3 หน้าจอ": 3}.get(pane_label, 1)
+
+
+def _get_print_view_settings(max_views: int | None = None) -> list[dict]:
+    max_views = max_views or _get_visible_pane_count()
+    rows = []
+    for idx in range(1, max_views + 1):
+        rows.append(
+            {
+                "idx": idx,
+                "layer": st.session_state.get(f"map_view_{idx}_layer_choice", "Current Mode Layers"),
+                "basemap": st.session_state.get(f"map_view_{idx}_basemap", ""),
+                "target_scale": st.session_state.get(f"map_view_{idx}_scale_label", ""),
+                "actual_scale": st.session_state.get(f"map_view_{idx}_actual_scale_label", ""),
+                "zoom": st.session_state.get(f"map_view_{idx}_zoom", ""),
+                "apply_scale": st.session_state.get(f"map_view_{idx}_apply_scale", ""),
+            }
+        )
+    return rows
+
+
+def _build_print_layout_html(
+    *,
+    title: str,
+    subtitle: str,
+    selected_province: str,
+    selected_district: str,
+    is_whole_country: bool,
+    preset: str,
+    notes: str,
+    include_north_arrow: bool = True,
+    include_scale_note: bool = True,
+    include_legend: bool = True,
+) -> str:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    views = _get_print_view_settings()
+
+    view_cards = ""
+    for view in views:
+        view_cards += f"""
+        <section class="map-card">
+            <div class="map-title">Map View {view['idx']}</div>
+            <div class="map-placeholder">
+                <div class="placeholder-title">Map View {view['idx']}</div>
+                <div class="placeholder-sub">Use the interactive map / exported HTML for live tiles</div>
+            </div>
+            <table class="meta">
+                <tr><th>Analysis Layer</th><td>{view['layer']}</td></tr>
+                <tr><th>Basemap</th><td>{view['basemap']}</td></tr>
+                <tr><th>Target scale</th><td>{view['target_scale']}</td></tr>
+                <tr><th>Current actual</th><td>{view['actual_scale'] or '-'}</td></tr>
+                <tr><th>Zoom</th><td>{view['zoom'] or '-'}</td></tr>
+            </table>
+        </section>
+        """
+
+    north = '<div class="north">▲<br>N</div>' if include_north_arrow else ""
+    scale_note = '<div class="scale-note">Scale values are approximate web-map scales. Verify in GIS layout for official use.</div>' if include_scale_note else ""
+    legend = """
+    <div class="legend">
+        <b>Suitability / Score Legend</b>
+        <div><span style="background:#d7191c"></span> 1 Very Low / Restricted</div>
+        <div><span style="background:#fdae61"></span> 2 Low</div>
+        <div><span style="background:#ffffbf"></span> 3 Moderate</div>
+        <div><span style="background:#a6d96a"></span> 4 High</div>
+        <div><span style="background:#1a9641"></span> 5 Very High</div>
+    </div>
+    """ if include_legend else ""
+
+    return f"""<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+@page {{
+  size: landscape;
+  margin: 12mm;
+}}
+* {{
+  box-sizing: border-box;
+}}
+body {{
+  margin: 0;
+  font-family: Arial, "Noto Sans Thai", sans-serif;
+  color: #172033;
+  background: #eef3f7;
+}}
+.sheet {{
+  width: 100%;
+  min-height: 100vh;
+  background: white;
+  padding: 22px;
+  position: relative;
+}}
+.header {{
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  border-bottom: 3px solid #00bcd4;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}}
+h1 {{
+  margin: 0;
+  font-size: 28px;
+  color: #0b3040;
+}}
+.subtitle {{
+  margin-top: 5px;
+  color: #4d5b68;
+  font-size: 14px;
+}}
+.badge {{
+  border: 1px solid #b9d8e2;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #f6fbfd;
+  font-size: 12px;
+  min-width: 230px;
+}}
+.grid {{
+  display: grid;
+  grid-template-columns: repeat({max(1, len(views))}, 1fr);
+  gap: 12px;
+}}
+.map-card {{
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}}
+.map-title {{
+  font-weight: 700;
+  padding: 8px 10px;
+  background: #0b3040;
+  color: #ffffff;
+}}
+.map-placeholder {{
+  height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: #31515e;
+  background:
+    linear-gradient(90deg, rgba(20,140,160,.11) 1px, transparent 1px),
+    linear-gradient(rgba(20,140,160,.11) 1px, transparent 1px),
+    linear-gradient(135deg, #e5f3f7, #f6fafc);
+  background-size: 80px 80px, 80px 80px, auto;
+}}
+.placeholder-title {{
+  font-size: 22px;
+  font-weight: 700;
+}}
+.placeholder-sub {{
+  font-size: 12px;
+  margin-top: 6px;
+}}
+.meta {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}}
+.meta th {{
+  width: 36%;
+  text-align: left;
+  background: #f4f7fa;
+  border-top: 1px solid #e5edf2;
+  padding: 6px 8px;
+}}
+.meta td {{
+  border-top: 1px solid #e5edf2;
+  padding: 6px 8px;
+}}
+.footer {{
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  font-size: 12px;
+  color: #4d5b68;
+}}
+.legend {{
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f8fbfc;
+}}
+.legend span {{
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  border: 1px solid #888;
+  margin-right: 6px;
+}}
+.north {{
+  position: absolute;
+  top: 105px;
+  right: 28px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: #0b3040;
+}}
+.scale-note {{
+  margin-top: 8px;
+  font-style: italic;
+}}
+.notes {{
+  white-space: pre-wrap;
+}}
+@media print {{
+  body {{ background: white; }}
+  .sheet {{ box-shadow: none; }}
+}}
+</style>
+</head>
+<body>
+<div class="sheet">
+  {north}
+  <div class="header">
+    <div>
+      <h1>{title}</h1>
+      <div class="subtitle">{subtitle}</div>
+    </div>
+    <div class="badge">
+      <b>Urban OS Print Layout</b><br>
+      Preset: {preset}<br>
+      Province: {selected_province or '-'}<br>
+      District: {selected_district or '-'}<br>
+      Whole country: {is_whole_country}<br>
+      Generated: {now}
+    </div>
+  </div>
+
+  <div class="grid">
+    {view_cards}
+  </div>
+
+  <div class="footer">
+    <div>
+      <b>Notes</b>
+      <div class="notes">{notes or 'Generated from Urban OS Map Workspace.'}</div>
+      {scale_note}
+    </div>
+    {legend}
+  </div>
+</div>
+</body>
+</html>"""
+
+
+def _build_print_layout_png_bytes(
+    *,
+    title: str,
+    subtitle: str,
+    selected_province: str,
+    selected_district: str,
+    preset: str,
+    notes: str,
+) -> tuple[bytes | None, str | None]:
+    """
+    Create a static PNG print-layout summary.
+
+    This is a server-side layout export and intentionally avoids browser screenshot
+    dependencies. Use HTML export if you need live map tiles.
+    """
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception as exc:
+        return None, f"ไม่พบ Pillow สำหรับสร้าง PNG: {exc}"
+
+    size = PRINT_LAYOUT_PRESETS.get(preset, PRINT_LAYOUT_PRESETS["A4 Landscape"])["png_size"]
+    width, height = size
+
+    img = Image.new("RGB", size, "white")
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", max(28, width // 55))
+        font_h = ImageFont.truetype("DejaVuSans-Bold.ttf", max(18, width // 85))
+        font = ImageFont.truetype("DejaVuSans.ttf", max(14, width // 110))
+        font_small = ImageFont.truetype("DejaVuSans.ttf", max(11, width // 145))
+    except Exception:
+        font_title = font_h = font = font_small = ImageFont.load_default()
+
+    margin = int(width * 0.035)
+    y = margin
+
+    draw.text((margin, y), title or "Urban OS Print Layout", fill="#0b3040", font=font_title)
+    y += int(width * 0.035)
+    draw.text((margin, y), subtitle or "Map Workspace Export", fill="#4d5b68", font=font)
+    y += int(width * 0.035)
+
+    # Header line
+    draw.line((margin, y, width - margin, y), fill="#00bcd4", width=max(3, width // 500))
+    y += int(width * 0.02)
+
+    pane_count = _get_visible_pane_count()
+    views = _get_print_view_settings(pane_count)
+
+    gap = int(width * 0.015)
+    card_w = int((width - margin * 2 - gap * (pane_count - 1)) / pane_count)
+    card_h = int(height * 0.54)
+    card_y = y
+
+    for view in views:
+        idx = view["idx"]
+        x = margin + (idx - 1) * (card_w + gap)
+
+        draw.rounded_rectangle(
+            (x, card_y, x + card_w, card_y + card_h),
+            radius=18,
+            outline="#d9e2ec",
+            width=2,
+            fill="#ffffff",
+        )
+        draw.rectangle((x, card_y, x + card_w, card_y + int(card_h * 0.095)), fill="#0b3040")
+        draw.text((x + 14, card_y + 12), f"Map View {idx}", fill="white", font=font_h)
+
+        ph_y = card_y + int(card_h * 0.095)
+        ph_h = int(card_h * 0.57)
+        draw.rectangle((x + 1, ph_y, x + card_w - 1, ph_y + ph_h), fill="#e5f3f7")
+
+        # grid imitation
+        grid_step = max(45, card_w // 5)
+        for gx in range(x + grid_step, x + card_w, grid_step):
+            draw.line((gx, ph_y, gx, ph_y + ph_h), fill="#c9e2e8", width=1)
+        for gy in range(ph_y + grid_step, ph_y + ph_h, grid_step):
+            draw.line((x, gy, x + card_w, gy), fill="#c9e2e8", width=1)
+
+        draw.text(
+            (x + 18, ph_y + ph_h // 2 - 12),
+            "Map placeholder / use HTML for live tiles",
+            fill="#31515e",
+            font=font,
+        )
+
+        meta_y = ph_y + ph_h + 18
+        meta_lines = [
+            f"Layer: {view['layer']}",
+            f"Basemap: {view['basemap']}",
+            f"Target: {view['target_scale']}",
+            f"Current: {view['actual_scale'] or '-'}",
+            f"Zoom: {view['zoom'] or '-'}",
+        ]
+        for line in meta_lines:
+            draw.text((x + 14, meta_y), line[:90], fill="#172033", font=font_small)
+            meta_y += int(width * 0.014)
+
+    y = card_y + card_h + int(width * 0.025)
+    info_lines = [
+        f"Area: {selected_province or '-'} / {selected_district or '-'}",
+        f"Preset: {preset}",
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "Scale values are approximate web-map scales. Verify in GIS layout for official use.",
+    ]
+    if notes:
+        info_lines.append(f"Notes: {notes[:180]}")
+
+    for line in info_lines:
+        draw.text((margin, y), line, fill="#4d5b68", font=font_small)
+        y += int(width * 0.014)
+
+    # north arrow
+    draw.text((width - margin - 55, margin + 8), "▲\nN", fill="#0b3040", font=font_h)
+
+    out = io.BytesIO()
+    img.save(out, format="PNG", optimize=True)
+    return out.getvalue(), None
+
+
+def _build_print_layout_pdf_bytes(
+    *,
+    title: str,
+    subtitle: str,
+    selected_province: str,
+    selected_district: str,
+    preset: str,
+    notes: str,
+) -> tuple[bytes | None, str | None]:
+    """
+    Create a static PDF print-layout summary.
+
+    Use HTML export when users need live web-map tiles.
+    """
+
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A1, A3, A4, landscape
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen import canvas
+    except Exception as exc:
+        return None, f"ไม่พบ ReportLab สำหรับสร้าง PDF: {exc}"
+
+    page_size_map = {
+        "Dashboard 16:9": landscape(A4),
+        "A4 Landscape": landscape(A4),
+        "A3 Landscape": landscape(A3),
+        "A1 Landscape": landscape(A1),
+    }
+    page_size = page_size_map.get(preset, landscape(A4))
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=page_size)
+
+    width, height = page_size
+    margin = 14 * mm
+    y = height - margin
+
+    c.setFillColor(colors.HexColor("#0b3040"))
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(margin, y, (title or "Urban OS Print Layout")[:90])
+    y -= 8 * mm
+
+    c.setFillColor(colors.HexColor("#4d5b68"))
+    c.setFont("Helvetica", 9)
+    c.drawString(margin, y, (subtitle or "Map Workspace Export")[:120])
+
+    c.setStrokeColor(colors.HexColor("#00bcd4"))
+    c.setLineWidth(2)
+    c.line(margin, y - 5 * mm, width - margin, y - 5 * mm)
+    y -= 14 * mm
+
+    views = _get_print_view_settings()
+    pane_count = max(1, len(views))
+    gap = 5 * mm
+    card_w = (width - margin * 2 - gap * (pane_count - 1)) / pane_count
+    card_h = height * 0.48
+    card_y = y - card_h
+
+    for view in views:
+        idx = view["idx"]
+        x = margin + (idx - 1) * (card_w + gap)
+
+        c.setStrokeColor(colors.HexColor("#d9e2ec"))
+        c.setFillColor(colors.white)
+        c.roundRect(x, card_y, card_w, card_h, 5, stroke=1, fill=1)
+
+        c.setFillColor(colors.HexColor("#0b3040"))
+        c.rect(x, card_y + card_h - 12 * mm, card_w, 12 * mm, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(x + 4 * mm, card_y + card_h - 8 * mm, f"Map View {idx}")
+
+        ph_y = card_y + card_h * 0.38
+        ph_h = card_h * 0.47
+        c.setFillColor(colors.HexColor("#e5f3f7"))
+        c.rect(x + 1, ph_y, card_w - 2, ph_h, stroke=0, fill=1)
+        c.setFillColor(colors.HexColor("#31515e"))
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(x + card_w / 2, ph_y + ph_h / 2, "Map placeholder / use HTML for live tiles")
+
+        c.setFillColor(colors.HexColor("#172033"))
+        c.setFont("Helvetica", 7)
+        meta_y = card_y + card_h * 0.31
+        lines = [
+            f"Layer: {view['layer']}",
+            f"Basemap: {view['basemap']}",
+            f"Target: {view['target_scale']}",
+            f"Current: {view['actual_scale'] or '-'}",
+            f"Zoom: {view['zoom'] or '-'}",
+        ]
+        for line in lines:
+            c.drawString(x + 4 * mm, meta_y, line[:82])
+            meta_y -= 4 * mm
+
+    y = card_y - 10 * mm
+    c.setFillColor(colors.HexColor("#4d5b68"))
+    c.setFont("Helvetica", 8)
+    footer_lines = [
+        f"Area: {selected_province or '-'} / {selected_district or '-'}",
+        f"Preset: {preset}",
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "Scale values are approximate web-map scales. Verify in GIS layout for official use.",
+    ]
+    if notes:
+        footer_lines.append(f"Notes: {notes[:160]}")
+    for line in footer_lines:
+        c.drawString(margin, y, line[:150])
+        y -= 4 * mm
+
+    c.setFillColor(colors.HexColor("#0b3040"))
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(width - margin - 15 * mm, height - margin - 4 * mm, "▲")
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(width - margin - 13 * mm, height - margin - 10 * mm, "N")
+
+    c.showPage()
+    c.save()
+    return buffer.getvalue(), None
+
+
+def render_print_layout_composer(
+    *,
+    base_name: str,
+    selected_province: str,
+    selected_district: str,
+    is_whole_country: bool,
+) -> None:
+    """
+    Step 8.7.8: Print Layout PNG / PDF Export.
+    """
+
+    st.markdown("#### Print Layout PNG / PDF Export")
+    st.caption(
+        "สร้างไฟล์จัดหน้าแผนที่สำหรับนำเสนอ/รายงาน โดยแยก Target scale และ Current actual scale ในแต่ละ Map View"
+    )
+
+    col1, col2 = st.columns([1.35, 1.0])
+    with col1:
+        title = st.text_input(
+            "ชื่อแผนที่ / ชื่อ Layout",
+            value="Urban OS Map Workspace",
+            key="print_layout_title",
+        )
+        subtitle = st.text_input(
+            "คำอธิบายรอง",
+            value=f"{selected_province or 'Thailand'} / {selected_district or 'Selected area'}",
+            key="print_layout_subtitle",
+        )
+        notes = st.text_area(
+            "หมายเหตุ",
+            value="Generated from Urban OS Spatial AI Dashboard.",
+            key="print_layout_notes",
+            height=90,
+        )
+
+    with col2:
+        preset = st.selectbox(
+            "ขนาด Layout",
+            list(PRINT_LAYOUT_PRESETS.keys()),
+            index=1,
+            key="print_layout_preset",
+        )
+        include_north_arrow = st.checkbox("North Arrow", value=True, key="print_include_north")
+        include_scale_note = st.checkbox("Scale note", value=True, key="print_include_scale_note")
+        include_legend = st.checkbox("Legend", value=True, key="print_include_legend")
+
+    st.info(
+        "HTML Layout เหมาะสำหรับเปิดแล้วสั่ง Print / Save as PDF จาก browser. "
+        "PNG/PDF ในขั้นนี้เป็น static layout summary; หากต้องการภาพ tile แบบตรงหน้าจอจะทำต่อในขั้น Screenshot Engine"
+    )
+
+    html = _build_print_layout_html(
+        title=title,
+        subtitle=subtitle,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        is_whole_country=is_whole_country,
+        preset=preset,
+        notes=notes,
+        include_north_arrow=include_north_arrow,
+        include_scale_note=include_scale_note,
+        include_legend=include_legend,
+    )
+
+    png_bytes, png_error = _build_print_layout_png_bytes(
+        title=title,
+        subtitle=subtitle,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        preset=preset,
+        notes=notes,
+    )
+
+    pdf_bytes, pdf_error = _build_print_layout_pdf_bytes(
+        title=title,
+        subtitle=subtitle,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        preset=preset,
+        notes=notes,
+    )
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.download_button(
+            "⬇️ Download Print Layout HTML",
+            data=html.encode("utf-8"),
+            file_name=f"{base_name}_print_layout.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+
+    with col_b:
+        if png_bytes:
+            st.download_button(
+                "⬇️ Download Print Layout PNG",
+                data=png_bytes,
+                file_name=f"{base_name}_print_layout.png",
+                mime="image/png",
+                use_container_width=True,
+            )
+        else:
+            st.warning(png_error or "ไม่สามารถสร้าง PNG ได้")
+
+    with col_c:
+        if pdf_bytes:
+            st.download_button(
+                "⬇️ Download Print Layout PDF",
+                data=pdf_bytes,
+                file_name=f"{base_name}_print_layout.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.warning(pdf_error or "ไม่สามารถสร้าง PDF ได้")
+
+    with st.expander("Preview HTML source / Method note", expanded=False):
+        st.code(html[:5000], language="html")
+        if len(html) > 5000:
+            st.caption("แสดงเฉพาะ HTML 5,000 ตัวอักษรแรก")
+
+
 def render_map_export_composer(
     *,
     Map,
@@ -328,14 +959,22 @@ def render_map_export_composer(
             f"urban_os_{selected_province or 'thailand'}_{selected_district or 'area'}"
         )
 
-        tab_map, tab_gis, tab_report = st.tabs(
-            ["🗺️ Map Export", "🧩 GIS Export", "📝 Layout Summary"]
+        tab_map, tab_print, tab_gis, tab_report = st.tabs(
+            ["🗺️ Map Export", "🖨️ Print Layout", "🧩 GIS Export", "📝 Layout Summary"]
         )
 
         with tab_map:
             st.markdown("#### Interactive HTML Map")
             st.caption("ส่งออกแผนที่แบบ interactive HTML จาก current map layer stack")
             _render_html_export(Map, base_name)
+
+        with tab_print:
+            render_print_layout_composer(
+                base_name=base_name,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
 
         with tab_gis:
             st.markdown("#### Shapefile / GeoJSON Export")
