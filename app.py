@@ -25,6 +25,7 @@ from components.spatial_database_connector import render_spatial_database_connec
 from components.system_diagnostics import render_system_diagnostics_panel
 from components.advanced_criteria_audit import render_advanced_criteria_score_audit
 from components.map_export_composer import render_map_export_composer
+from components.planning_report_generator import render_planning_report_generator_panel
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -134,6 +135,7 @@ def main() -> None:
         suitability_config = state.get("suitability_config")
 
         if suitability_config and suitability_config.get("run_suitability"):
+            st.session_state["suitability_last_config"] = suitability_config
             weights = suitability_config.get("weights", {})
             show_factors = suitability_config.get("show_factor_layers", False)
             constraint_config = suitability_config.get("constraint_config", {})
@@ -256,6 +258,13 @@ def main() -> None:
         pass
 
     # -----------------------------------------------------
+    # 9.2 Mode: Planning Report
+    # -----------------------------------------------------
+    elif selected_mode == "Planning Report":
+        # ใช้เฉพาะ base map + boundary เพื่อประกอบรายงาน
+        pass
+
+    # -----------------------------------------------------
     # 9.5 Mode: Spatial Database
     # -----------------------------------------------------
     elif selected_mode == "Spatial Database":
@@ -330,6 +339,31 @@ def main() -> None:
         management_panel_rendered = True
 
         with st.expander("🗺️ แสดง/ซ่อนแผนที่พื้นที่อ้างอิง", expanded=False):
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
+
+    elif selected_mode == "Planning Report":
+        render_planning_report_generator_panel(
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่อ้างอิงและ Export Composer", expanded=False):
             render_map_workspace(
                 Map,
                 map_layout_config,
@@ -487,6 +521,10 @@ def main() -> None:
         pass
 
     elif selected_mode == "Import Wizard":
+        # Already rendered above the map in data-management panel mode.
+        pass
+
+    elif selected_mode == "Planning Report":
         # Already rendered above the map in data-management panel mode.
         pass
 

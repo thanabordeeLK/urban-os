@@ -258,8 +258,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Spatial Database", "System Diagnostics", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "hdd-network", "activity", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Planning Report", "Spatial Database", "System Diagnostics", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "file-earmark-text", "hdd-network", "activity", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -377,6 +377,19 @@ def render_sidebar() -> dict:
             )
 
             st.caption("นำเข้า Shapefile ZIP, GeoJSON, KML/KMZ และ CSV พิกัด X,Y")
+
+        # -------------------------------------------------
+        # Planning Report Mode
+        # -------------------------------------------------
+        elif selected_mode == "Planning Report":
+            st.markdown("### 📄 Planning Report")
+
+            basemap_choice = render_basemap_selector(
+                key="planning_report_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("สร้างรายงานผังเมืองจากผลวิเคราะห์ล่าสุดของระบบ")
 
         # -------------------------------------------------
         # Spatial Database Mode
