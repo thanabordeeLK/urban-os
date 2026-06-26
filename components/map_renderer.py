@@ -286,17 +286,84 @@ def estimate_leaflet_zoom_from_scale(
     return int(max(0, min(22, round(zoom))))
 
 
-def add_export_scale_overlay(Map, scale_label: str = "", paper_preset: str = ""):
+
+def estimate_scale_from_leaflet_zoom(
+    zoom: int | float | None,
+    latitude: float = 15.0,
+) -> int | None:
     """
-    Add a small visual export-scale label on the map.
+    Approximate representative fraction denominator from Leaflet/Web Mercator zoom.
+
+    This returns the actual approximate web-map scale from current zoom and latitude.
+    It is not the same as the target export scale selected in the widget.
     """
 
-    if not scale_label or scale_label.startswith("Auto"):
+    try:
+        z = float(zoom)
+        lat = float(latitude or 0)
+    except Exception:
+        return None
+
+    if z < 0:
+        return None
+
+    earth_resolution_z0 = 156543.03392 * math.cos(math.radians(lat))
+    if earth_resolution_z0 <= 0:
+        earth_resolution_z0 = 156543.03392
+
+    resolution = earth_resolution_z0 / (2 ** z)
+    denominator = resolution / 0.00028
+    if denominator <= 0:
+        return None
+
+    return int(round(denominator))
+
+
+def format_scale_denominator(denominator: int | float | None) -> str:
+    if denominator is None:
+        return "-"
+
+    try:
+        value = int(round(float(denominator)))
+    except Exception:
+        return "-"
+
+    if value <= 0:
+        return "-"
+
+    return f"1 : {value:,}"
+
+
+def get_actual_scale_label_from_view(view_idx: int | None) -> str:
+    if not view_idx:
+        return ""
+
+    return st.session_state.get(f"map_view_{view_idx}_actual_scale_label", "")
+
+
+
+def add_export_scale_overlay(
+    Map,
+    scale_label: str = "",
+    paper_preset: str = "",
+    actual_scale_label: str = "",
+    actual_zoom: int | float | None = None,
+):
+    """
+    Add a small visual scale label on the map.
+
+    The selected scale is a target export scale. The actual scale is calculated
+    from the current Leaflet zoom after users pan/zoom the map.
+    """
+
+    if (not scale_label or scale_label.startswith("Auto")) and not actual_scale_label:
         return Map
 
     try:
-        safe_scale = escape(str(scale_label))
+        safe_target = escape(str(scale_label or "Auto / ตาม zoom"))
+        safe_actual = escape(str(actual_scale_label or "รอข้อมูลหลังซูม/เลื่อนแผนที่"))
         safe_paper = escape(str(paper_preset or ""))
+        safe_zoom = escape(str(actual_zoom if actual_zoom is not None else "-"))
 
         html = f"""
         {{% macro html(this, kwargs) %}}
@@ -305,7 +372,7 @@ def add_export_scale_overlay(Map, scale_label: str = "", paper_preset: str = "")
             left: 18px;
             bottom: 28px;
             z-index: 9999;
-            background: rgba(255,255,255,0.92);
+            background: rgba(255,255,255,0.94);
             color: #111;
             border: 1px solid rgba(0,0,0,0.25);
             border-radius: 8px;
@@ -313,10 +380,14 @@ def add_export_scale_overlay(Map, scale_label: str = "", paper_preset: str = "")
             font-size: 12px;
             font-weight: 700;
             box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            min-width: 170px;
         ">
-            🧭 Export scale {safe_scale}
-            <div style="font-size:11px; font-weight:500; margin-top:2px;">
-                {safe_paper}
+            🧭 Target {safe_target}
+            <div style="font-size:11px; font-weight:700; margin-top:2px;">
+                Current ≈ {safe_actual}
+            </div>
+            <div style="font-size:10px; font-weight:500; margin-top:2px;">
+                zoom {safe_zoom} · {safe_paper}
             </div>
         </div>
         {{% endmacro %}}
@@ -779,9 +850,14 @@ def render_map(
 
             export_scale_label = getattr(Map, "export_scale_label", "")
             export_paper_preset = getattr(Map, "export_paper_preset", "")
-            if export_scale_label and not str(export_scale_label).startswith("Auto"):
+            actual_scale_label = getattr(Map, "actual_scale_label", "") or get_actual_scale_label_from_view(view_idx)
+            actual_zoom = getattr(Map, "actual_zoom", None) or (st.session_state.get(f"map_view_{view_idx}_zoom") if view_idx else None)
+
+            if export_scale_label or actual_scale_label:
                 st.caption(
-                    f"🧭 Export scale target: {export_scale_label} "
+                    f"🧭 Target scale: {export_scale_label or 'Auto'} "
+                    f"· Current actual ≈ {actual_scale_label or 'รอข้อมูลหลังซูม/เลื่อน'} "
+                    f"· zoom {actual_zoom if actual_zoom is not None else '-'} "
                     f"{('· ' + export_paper_preset) if export_paper_preset else ''}"
                 )
 
@@ -812,6 +888,21 @@ def render_map(
                     st.session_state["urban_os_map_zoom"] = zoom
                     if view_idx:
                         st.session_state[f"map_view_{view_idx}_zoom"] = zoom
+
+                if view_idx:
+                    center_for_scale = center if center else st.session_state.get(f"map_view_{view_idx}_center")
+                    lat_for_scale = None
+                    if isinstance(center_for_scale, dict):
+                        lat_for_scale = center_for_scale.get("lat")
+                    elif isinstance(center_for_scale, (list, tuple)) and center_for_scale:
+                        lat_for_scale = center_for_scale[0]
+
+                    actual_denominator = estimate_scale_from_leaflet_zoom(
+                        zoom,
+                        latitude=lat_for_scale if lat_for_scale is not None else 15.0,
+                    )
+                    st.session_state[f"map_view_{view_idx}_actual_scale_denominator"] = actual_denominator
+                    st.session_state[f"map_view_{view_idx}_actual_scale_label"] = format_scale_denominator(actual_denominator)
 
                 _sync_update_from_map_data(
                     view_idx=view_idx,
@@ -1092,6 +1183,7 @@ def _create_independent_view_map(
     *,
     original_map,
     view_config: dict,
+    view_idx: int | None = None,
     roi=None,
     is_whole_country: bool = False,
     selected_province: str = "",
@@ -1108,6 +1200,8 @@ def _create_independent_view_map(
     apply_scale = bool(view_config.get("apply_scale_to_zoom", False))
     paper_preset = view_config.get("paper_preset", "Screen / Dashboard")
     basemap_choice = view_config.get("basemap_choice", getattr(original_map, "basemap_choice", "OpenStreetMap"))
+    actual_scale_label = get_actual_scale_label_from_view(view_idx)
+    actual_zoom = st.session_state.get(f"map_view_{view_idx}_zoom") if view_idx else None
 
     if layer_choice == "Current Mode Layers":
         panel_map = clone_map_for_panel(original_map)
@@ -1118,7 +1212,15 @@ def _create_independent_view_map(
         )
         panel_map.export_scale_label = scale_label
         panel_map.export_paper_preset = paper_preset
-        add_export_scale_overlay(panel_map, scale_label=scale_label, paper_preset=paper_preset)
+        panel_map.actual_scale_label = actual_scale_label
+        panel_map.actual_zoom = actual_zoom
+        add_export_scale_overlay(
+            panel_map,
+            scale_label=scale_label,
+            paper_preset=paper_preset,
+            actual_scale_label=actual_scale_label,
+            actual_zoom=actual_zoom,
+        )
         return panel_map
 
     panel_map = create_base_map(
@@ -1131,6 +1233,16 @@ def _create_independent_view_map(
         apply_scale_to_zoom=apply_scale,
         export_scale_label=scale_label,
         export_paper_preset=paper_preset,
+    )
+
+    panel_map.actual_scale_label = actual_scale_label
+    panel_map.actual_zoom = actual_zoom
+    add_export_scale_overlay(
+        panel_map,
+        scale_label=scale_label,
+        paper_preset=paper_preset,
+        actual_scale_label=actual_scale_label,
+        actual_zoom=actual_zoom,
     )
 
     add_boundary(panel_map, roi=roi, is_whole_country=is_whole_country)
@@ -1175,13 +1287,20 @@ def _render_view_controls(
         scale_options = _map_scale_options()
         scale_index = scale_options.index(global_scale_label) if global_scale_label in scale_options else 0
         scale_label = st.selectbox(
-            "Scale ของ View นี้",
+            "Target export scale",
             scale_options,
             index=scale_index,
             key=f"map_view_{idx}_scale_label",
+            help="เป็นมาตราส่วนเป้าหมายตอนจัด export ไม่ใช่ scale จริงหลังผู้ใช้ซูม/เลื่อนเอง",
         )
+        actual_label = st.session_state.get(f"map_view_{idx}_actual_scale_label", "")
+        actual_zoom = st.session_state.get(f"map_view_{idx}_zoom", "")
+        if actual_label:
+            st.caption(f"Current actual ≈ {actual_label} · zoom {actual_zoom}")
+        else:
+            st.caption("Current actual จะแสดงหลังมีการซูม/เลื่อนแผนที่")
         apply_scale = st.checkbox(
-            "ใช้ scale นี้กับ zoom",
+            "ใช้ target scale กับ zoom",
             value=bool(global_apply_scale),
             key=f"map_view_{idx}_apply_scale",
         )
@@ -1243,6 +1362,7 @@ def render_map_workspace(
             panel_map = _create_independent_view_map(
                 original_map=Map,
                 view_config=view_config,
+                view_idx=idx,
                 roi=roi,
                 is_whole_country=is_whole_country,
                 selected_province=selected_province,

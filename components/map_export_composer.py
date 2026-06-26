@@ -286,8 +286,10 @@ def _workspace_summary_markdown(
                 f"### Map View {idx}",
                 f"- Layer / analysis: `{st.session_state.get(f'map_view_{idx}_layer_choice', '')}`",
                 f"- Basemap: `{st.session_state.get(f'map_view_{idx}_basemap', '')}`",
-                f"- Scale: `{st.session_state.get(f'map_view_{idx}_scale_label', '')}`",
-                f"- Apply scale to zoom: `{st.session_state.get(f'map_view_{idx}_apply_scale', '')}`",
+                f"- Target export scale: `{st.session_state.get(f'map_view_{idx}_scale_label', '')}`",
+                f"- Current actual scale: `{st.session_state.get(f'map_view_{idx}_actual_scale_label', '')}`",
+                f"- Current zoom: `{st.session_state.get(f'map_view_{idx}_zoom', '')}`",
+                f"- Apply target scale to zoom: `{st.session_state.get(f'map_view_{idx}_apply_scale', '')}`",
                 "",
             ]
         )
