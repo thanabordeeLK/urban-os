@@ -554,13 +554,203 @@ def add_custom_legend(
 # ---------------------------------------------------------
 # Render map
 # ---------------------------------------------------------
-def render_map(Map, height: int = 850, key_suffix: str = "", panel_title: str = ""):
+
+# ---------------------------------------------------------
+# Map View synchronization helpers
+# ---------------------------------------------------------
+def _normalize_sync_mode(sync_mode_label: str | None) -> str:
+    mapping = {
+        "ไม่ซิงก์": "off",
+        "ซิงก์ตาม Map View 1": "master_1",
+        "ซิงก์ตาม Map View 2": "master_2",
+        "ซิงก์ตาม Map View 3": "master_3",
+        "ซิงก์ทุก View (ล่าสุด)": "latest",
+    }
+    return mapping.get(sync_mode_label or "ไม่ซิงก์", "off")
+
+
+def _sync_master_view_idx(sync_mode: str) -> int | None:
+    if sync_mode == "master_1":
+        return 1
+    if sync_mode == "master_2":
+        return 2
+    if sync_mode == "master_3":
+        return 3
+    return None
+
+
+def _center_to_list(center) -> list[float] | None:
+    if isinstance(center, dict) and "lat" in center and "lng" in center:
+        try:
+            return [float(center["lat"]), float(center["lng"])]
+        except Exception:
+            return None
+
+    if isinstance(center, (list, tuple)) and len(center) >= 2:
+        try:
+            return [float(center[0]), float(center[1])]
+        except Exception:
+            return None
+
+    return None
+
+
+def _viewport_changed(
+    old_center,
+    old_zoom,
+    new_center,
+    new_zoom,
+    tolerance: float = 0.000001,
+) -> bool:
+    old_c = _center_to_list(old_center)
+    new_c = _center_to_list(new_center)
+
+    if old_c is None or new_c is None:
+        return True
+
+    if abs(old_c[0] - new_c[0]) > tolerance or abs(old_c[1] - new_c[1]) > tolerance:
+        return True
+
+    try:
+        if old_zoom is None and new_zoom is not None:
+            return True
+        if old_zoom is not None and new_zoom is None:
+            return True
+        if old_zoom is not None and new_zoom is not None and int(old_zoom) != int(new_zoom):
+            return True
+    except Exception:
+        return True
+
+    return False
+
+
+def _apply_viewport_to_map(Map, center=None, zoom=None, lock_zoom: bool = True):
+    """
+    Apply center/zoom to an existing Folium/geemap map before st_folium renders it.
+    """
+
+    center_list = _center_to_list(center)
+    if center_list is not None:
+        try:
+            Map.location = center_list
+        except Exception:
+            pass
+        try:
+            Map.options["center"] = center_list
+        except Exception:
+            pass
+
+    if lock_zoom and zoom is not None:
+        try:
+            zoom_int = int(zoom)
+            Map.options["zoom"] = zoom_int
+            Map.options["zoom_start"] = zoom_int
+            Map.zoom_start = zoom_int
+        except Exception:
+            pass
+
+    return Map
+
+
+def _get_sync_config(layout_config: dict | None = None) -> dict:
+    layout_config = layout_config or {}
+    mode_label = layout_config.get("sync_mode_label", st.session_state.get("map_sync_mode_label", "ไม่ซิงก์"))
+    sync_mode = _normalize_sync_mode(mode_label)
+
+    return {
+        "mode_label": mode_label,
+        "mode": sync_mode,
+        "master_view_idx": _sync_master_view_idx(sync_mode),
+        "lock_zoom": bool(layout_config.get("sync_lock_zoom", st.session_state.get("map_sync_lock_zoom", True))),
+    }
+
+
+def _sync_should_write(view_idx: int | None, sync_config: dict) -> bool:
+    if not view_idx:
+        return False
+
+    mode = sync_config.get("mode", "off")
+    if mode == "off":
+        return False
+
+    if mode == "latest":
+        return True
+
+    master_idx = sync_config.get("master_view_idx")
+    return master_idx == view_idx
+
+
+def _sync_should_apply(view_idx: int | None, sync_config: dict) -> bool:
+    if not view_idx:
+        return False
+
+    mode = sync_config.get("mode", "off")
+    if mode == "off":
+        return False
+
+    center = st.session_state.get("map_sync_center")
+    if center is None:
+        return False
+
+    if mode == "latest":
+        return True
+
+    # In master mode, do not force the master to its previous value;
+    # let the master view be freely panned/zoomed and push its viewport to others.
+    master_idx = sync_config.get("master_view_idx")
+    return master_idx is not None and view_idx != master_idx
+
+
+def _sync_apply_to_map(Map, view_idx: int | None, sync_config: dict):
+    if not _sync_should_apply(view_idx, sync_config):
+        return Map
+
+    return _apply_viewport_to_map(
+        Map,
+        center=st.session_state.get("map_sync_center"),
+        zoom=st.session_state.get("map_sync_zoom"),
+        lock_zoom=bool(sync_config.get("lock_zoom", True)),
+    )
+
+
+def _sync_update_from_map_data(view_idx: int | None, sync_config: dict, map_data: dict | None):
+    if not map_data or not _sync_should_write(view_idx, sync_config):
+        return
+
+    center = _center_to_list(map_data.get("center"))
+    zoom = map_data.get("zoom")
+
+    if center is None:
+        return
+
+    old_center = st.session_state.get("map_sync_center")
+    old_zoom = st.session_state.get("map_sync_zoom")
+
+    if _viewport_changed(old_center, old_zoom, center, zoom):
+        st.session_state["map_sync_center"] = center
+        st.session_state["map_sync_zoom"] = zoom
+        st.session_state["map_sync_source_view"] = view_idx
+        st.session_state["map_sync_token"] = int(st.session_state.get("map_sync_token", 0)) + 1
+
+
+def render_map(
+    Map,
+    height: int = 850,
+    key_suffix: str = "",
+    panel_title: str = "",
+    view_idx: int | None = None,
+    sync_config: dict | None = None,
+):
     """
     แสดงผลแผนที่หลัก และบันทึกตำแหน่ง zoom/pan ล่าสุดไว้ใน session_state
     """
 
+    sync_config = sync_config or {"mode": "off"}
+
     with st.spinner("กำลังเรนเดอร์แผนที่..."):
         try:
+            Map = _sync_apply_to_map(Map, view_idx=view_idx, sync_config=sync_config)
+
             basemap_choice = getattr(Map, "basemap_choice", "OpenStreetMap")
             area_key = getattr(Map, "area_key", "default_area")
 
@@ -576,6 +766,8 @@ def render_map(Map, height: int = 850, key_suffix: str = "", panel_title: str = 
             )
 
             map_refresh_token = st.session_state.get("urban_os_map_refresh_token", 0)
+            if (sync_config or {}).get("mode") != "off":
+                map_refresh_token = f"{map_refresh_token}_sync{st.session_state.get('map_sync_token', 0)}"
             suffix = str(key_suffix or "").replace(" ", "_").replace("/", "_")
             if suffix:
                 map_key = f"urban_os_map_{clean_area_key}_{clean_basemap}_{map_refresh_token}_{suffix}"
@@ -610,9 +802,22 @@ def render_map(Map, height: int = 850, key_suffix: str = "", panel_title: str = 
                         center["lat"],
                         center["lng"],
                     ]
+                    if view_idx:
+                        st.session_state[f"map_view_{view_idx}_center"] = [
+                            center["lat"],
+                            center["lng"],
+                        ]
 
                 if zoom is not None:
                     st.session_state["urban_os_map_zoom"] = zoom
+                    if view_idx:
+                        st.session_state[f"map_view_{view_idx}_zoom"] = zoom
+
+                _sync_update_from_map_data(
+                    view_idx=view_idx,
+                    sync_config=sync_config,
+                    map_data=map_data,
+                )
 
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการโหลดแผนที่: {e}")
@@ -664,7 +869,7 @@ def _render_main_map_workspace_controls(layout_config: dict | None = None) -> di
 
     st.markdown("### 🖥️ Map Workspace")
     with st.container():
-        c1, c2, c3 = st.columns([1.4, 1.0, 3.0])
+        c1, c2, c3, c4 = st.columns([1.35, 1.0, 1.55, 2.0])
 
         pane_options = ["1 หน้าจอ", "2 หน้าจอ", "3 หน้าจอ"]
         current_pane_label = st.session_state.get("map_pane_count_label", "1 หน้าจอ")
@@ -690,15 +895,59 @@ def _render_main_map_workspace_controls(layout_config: dict | None = None) -> di
             )
 
         with c3:
-            st.caption(
-                "ปรับ Scale และการทำงาน/ผลวิเคราะห์ได้แยกกันในแต่ละ Map View ด้านล่าง"
+            sync_options = [
+                "ไม่ซิงก์",
+                "ซิงก์ตาม Map View 1",
+                "ซิงก์ตาม Map View 2",
+                "ซิงก์ตาม Map View 3",
+                "ซิงก์ทุก View (ล่าสุด)",
+            ]
+            current_sync = st.session_state.get("map_sync_mode_label", "ไม่ซิงก์")
+            sync_index = sync_options.index(current_sync) if current_sync in sync_options else 0
+            sync_mode_label = st.selectbox(
+                "🔒 Sync Map Views",
+                sync_options,
+                index=sync_index,
+                key="map_sync_mode_label",
+                help="ล็อกตำแหน่ง pan/zoom เพื่อเปรียบเทียบข้อมูลหลาย Map View ในพื้นที่เดียวกัน",
             )
+            sync_lock_zoom = st.checkbox(
+                "ล็อก zoom ด้วย",
+                value=bool(st.session_state.get("map_sync_lock_zoom", True)),
+                key="map_sync_lock_zoom",
+            )
+
+        with c4:
+            source_view = st.session_state.get("map_sync_source_view")
+            sync_center = st.session_state.get("map_sync_center")
+            sync_zoom = st.session_state.get("map_sync_zoom")
+            if sync_mode_label != "ไม่ซิงก์" and sync_center:
+                st.caption(
+                    f"Sync active · source View {source_view or '-'} · "
+                    f"zoom {sync_zoom if sync_zoom is not None else '-'}"
+                )
+            else:
+                st.caption(
+                    "ปรับ Scale และการทำงาน/ผลวิเคราะห์ได้แยกกันในแต่ละ Map View ด้านล่าง"
+                )
+
+            if st.button("Reset Sync Viewport", key="reset_map_sync_viewport"):
+                for key in [
+                    "map_sync_center",
+                    "map_sync_zoom",
+                    "map_sync_source_view",
+                    "map_sync_token",
+                ]:
+                    st.session_state.pop(key, None)
+                st.success("Reset sync viewport แล้ว")
 
     pane_count = {"1 หน้าจอ": 1, "2 หน้าจอ": 2, "3 หน้าจอ": 3}.get(pane_label, 1)
 
     return {
         "pane_count": pane_count,
         "height": int(height),
+        "sync_mode_label": sync_mode_label,
+        "sync_lock_zoom": bool(sync_lock_zoom),
         # kept for backward compatibility only; not shown as top controls
         "paper_preset": st.session_state.get("map_export_paper_preset", "Screen / Dashboard"),
     }
@@ -967,12 +1216,18 @@ def render_map_workspace(
     pane_count = int(layout_config.get("pane_count", 1) or 1)
     pane_count = max(1, min(3, pane_count))
     height = int(layout_config.get("height", 850) or 850)
+    sync_config = _get_sync_config(layout_config)
 
     if pane_count > 1:
-        st.info(
-            "เลือกการทำงาน/ผลวิเคราะห์ของแต่ละ Map View ได้แยกกัน เช่น View 1 = Suitability, "
-            "View 2 = Heat Risk, View 3 = Boundary Only"
-        )
+        if sync_config.get("mode") == "off":
+            st.info(
+                "เลือกการทำงาน/ผลวิเคราะห์ของแต่ละ Map View ได้แยกกัน เช่น View 1 = Suitability, "
+                "View 2 = Heat Risk, View 3 = Boundary Only"
+            )
+        else:
+            st.info(
+                "Sync Map Views เปิดอยู่: เลื่อน/ซูม view ต้นแบบ แล้ว view อื่นจะตามตำแหน่งเดียวกันหลัง rerun"
+            )
 
     cols = st.columns(pane_count)
 
@@ -998,8 +1253,11 @@ def render_map_workspace(
             basemap_key = str(view_config.get("basemap_choice", "")).replace(" ", "_")
             apply_key = "scale_on" if view_config.get("apply_scale_to_zoom") else "scale_off"
 
+            sync_key = str(sync_config.get("mode", "off")).replace(" ", "_")
             render_map(
                 panel_map,
                 height=height,
-                key_suffix=f"view_{idx}_{layer_key}_{basemap_key}_{scale_key}_{apply_key}",
+                key_suffix=f"view_{idx}_{layer_key}_{basemap_key}_{scale_key}_{apply_key}_{sync_key}",
+                view_idx=idx,
+                sync_config=sync_config,
             )

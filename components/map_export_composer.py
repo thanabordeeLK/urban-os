@@ -273,6 +273,9 @@ def _workspace_summary_markdown(
         "## Layout",
         f"- Map Views: `{pane_label}`",
         f"- Map height: `{height}`",
+        f"- Sync mode: `{st.session_state.get('map_sync_mode_label', 'ไม่ซิงก์')}`",
+        f"- Sync lock zoom: `{st.session_state.get('map_sync_lock_zoom', True)}`",
+        f"- Sync source view: `{st.session_state.get('map_sync_source_view', '')}`",
         "",
         "## Map View Settings",
     ]
