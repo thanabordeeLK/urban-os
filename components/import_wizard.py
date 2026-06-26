@@ -15,6 +15,12 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 try:
+    from services.spatial_db_service import import_geojson_to_postgis, test_postgis_connection
+except Exception:
+    import_geojson_to_postgis = None
+    test_postgis_connection = None
+
+try:
     from components.map_export_composer import _geojson_to_shapefile_zip_bytes
 except Exception:
     _geojson_to_shapefile_zip_bytes = None
@@ -323,6 +329,109 @@ def _ogr2ogr_command(file_name: str, table_name: str) -> str:
     ])
 
 
+
+
+def _render_direct_postgis_import() -> None:
+    st.markdown("#### Direct Import to PostGIS / Supabase PostGIS")
+    st.caption("นำ Last Imported Layer เข้า PostGIS โดยตรงจากข้อมูลที่ preview แล้ว")
+
+    geojson = st.session_state.get(LAST_IMPORT_KEY)
+    if not geojson:
+        st.warning("ยังไม่มี Last Imported Layer ให้กลับไป Upload & Preview ก่อน")
+        return
+
+    if import_geojson_to_postgis is None:
+        st.error("ไม่พบ service import_geojson_to_postgis ตรวจสอบ services/spatial_db_service.py")
+        return
+
+    with st.container():
+        c0, c1, c2 = st.columns([1, 1, 1])
+        with c0:
+            if st.button("Test PostGIS Connection", key="import_pg_test_connection", use_container_width=True):
+                try:
+                    info = test_postgis_connection() if test_postgis_connection else {}
+                    st.success("เชื่อมต่อ PostGIS สำเร็จ")
+                    st.json(info)
+                except Exception as exc:
+                    st.error(f"เชื่อมต่อ PostGIS ไม่สำเร็จ: {exc}")
+
+        feature_count = len(_features(geojson))
+        c1.metric("Ready features", f"{feature_count:,}")
+        c2.metric("Geometry", _geometry_type_summary(geojson))
+
+    default_layer = st.session_state.get("import_wizard_last_layer_name", "imported_layer")
+    default_category = st.session_state.get("import_wizard_last_category", "custom")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        schema_name = st.text_input("Schema", value="public", key="direct_pg_schema")
+        table_name = st.text_input(
+            "Target table",
+            value=_safe_filename(default_layer),
+            key="direct_pg_table",
+        )
+    with col2:
+        geom_col = st.text_input("Geometry column", value="geom", key="direct_pg_geom_col")
+        mode = st.selectbox("Import mode", ["append", "overwrite"], index=0, key="direct_pg_mode")
+    with col3:
+        create_attrs = st.checkbox("Create attribute columns", value=True, key="direct_pg_create_attrs")
+        create_index = st.checkbox("Create spatial index", value=True, key="direct_pg_create_index")
+
+    max_features = st.number_input(
+        "Max features to import",
+        min_value=1,
+        max_value=200000,
+        value=min(max(feature_count, 1), 50000),
+        step=100,
+        key="direct_pg_max_features",
+    )
+
+    st.warning(
+        "โหมด overwrite จะ DROP TABLE เดิมก่อนสร้างใหม่ ควรใช้เมื่อแน่ใจแล้วเท่านั้น"
+    )
+
+    confirm = st.checkbox(
+        "ยืนยันว่าต้องการนำเข้า PostGIS",
+        value=False,
+        key="direct_pg_confirm",
+    )
+
+    if st.button("🐘 Import Last Layer to PostGIS", key="direct_pg_import_button", use_container_width=True):
+        if not confirm:
+            st.error("กรุณาติ๊กยืนยันก่อน import")
+            return
+
+        try:
+            with st.spinner("กำลัง import เข้า PostGIS..."):
+                result = import_geojson_to_postgis(
+                    geojson=geojson,
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    geom_col=geom_col,
+                    layer_name=default_layer,
+                    category=default_category,
+                    source_file=st.session_state.get("import_wizard_last_source_file", ""),
+                    mode=mode,
+                    create_attribute_columns=create_attrs,
+                    create_spatial_index=create_index,
+                    max_features=int(max_features),
+                )
+
+            st.session_state["import_wizard_last_postgis_import"] = result
+            st.success(
+                f"Import สำเร็จ: {result.get('inserted', 0):,} features → {result.get('full_table_name')}"
+            )
+            st.json(result)
+
+        except Exception as exc:
+            st.error(f"Import เข้า PostGIS ไม่สำเร็จ: {exc}")
+
+    last_result = st.session_state.get("import_wizard_last_postgis_import")
+    if last_result:
+        st.markdown("#### Last PostGIS Import Result")
+        st.json(last_result)
+
+
 def render_import_wizard(*, roi=None, selected_province: str = "", selected_district: str = "", is_whole_country: bool = False) -> None:
     st.markdown("### 📥 Import Wizard")
     st.caption("นำเข้าข้อมูล GIS จาก Shapefile ZIP, GeoJSON, KML/KMZ หรือ CSV พิกัด X,Y เพื่อ preview, จัดหมวดหมู่, export ต่อ และเตรียมส่งเข้า PostGIS")
@@ -387,6 +496,7 @@ def render_import_wizard(*, roi=None, selected_province: str = "", selected_dist
                 st.session_state[LAST_IMPORT_KEY] = geojson
                 st.session_state["import_wizard_last_layer_name"] = layer_name
                 st.session_state["import_wizard_last_category"] = category
+                st.session_state["import_wizard_last_source_file"] = file_name
 
                 st.markdown("#### Import Summary")
                 c1, c2, c3 = st.columns(3)
@@ -454,7 +564,10 @@ def render_import_wizard(*, roi=None, selected_province: str = "", selected_dist
             _render_geojson_downloads(last_geojson, _safe_filename(f"urban_os_last_import_{st.session_state.get('import_wizard_last_layer_name','layer')}"))
 
     with tab_postgis:
-        st.markdown("#### PostGIS Import Guide")
+        _render_direct_postgis_import()
+
+        st.divider()
+        st.markdown("#### PostGIS Import Guide / Fallback")
         table_name = st.text_input("Target table name", value=_safe_filename(st.session_state.get("import_wizard_last_layer_name", "imported_layer")), key="postgis_import_table_name")
         source_path = st.text_input("Source file path for ogr2ogr", value=f"{_safe_filename(st.session_state.get('import_wizard_last_layer_name','imported_layer'))}.geojson", key="postgis_import_source_path")
         command = _ogr2ogr_command(source_path, table_name)

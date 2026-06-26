@@ -508,3 +508,268 @@ def fetch_postgis_records_by_roi(
         rows = list(conn.execute(sql, params).mappings())
 
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------
+# Import Wizard -> PostGIS writer
+# ---------------------------------------------------------
+def _safe_pg_identifier(name: str, default: str = "field") -> str:
+    """
+    Convert arbitrary text to a safe PostgreSQL identifier.
+    """
+
+    name = str(name or default).strip().lower()
+    name = re.sub(r"[^a-z0-9_]+", "_", name)
+    name = re.sub(r"_+", "_", name).strip("_")
+
+    if not name:
+        name = default
+
+    if name[0].isdigit():
+        name = f"f_{name}"
+
+    return name[:50]
+
+
+def _safe_pg_column_name(name: str, used: set[str]) -> str:
+    base = _safe_pg_identifier(name, "field")
+    candidate = base
+    i = 1
+    while candidate in used or candidate in {
+        "id",
+        "geom",
+        "properties",
+        "layer_name",
+        "category",
+        "source_file",
+        "imported_at",
+    }:
+        suffix = f"_{i}"
+        candidate = f"{base[:50-len(suffix)]}{suffix}"
+        i += 1
+    used.add(candidate)
+    return candidate
+
+
+def _infer_pg_type(values: list[Any]) -> str:
+    clean = [v for v in values if v is not None and v != ""]
+    if not clean:
+        return "TEXT"
+
+    if all(isinstance(v, bool) for v in clean):
+        return "BOOLEAN"
+
+    if all(isinstance(v, int) and not isinstance(v, bool) for v in clean):
+        return "BIGINT"
+
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in clean):
+        return "DOUBLE PRECISION"
+
+    return "TEXT"
+
+
+def _coerce_value_for_pg(value: Any, pg_type: str):
+    if value is None:
+        return None
+
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False)
+
+    if pg_type == "BOOLEAN":
+        if isinstance(value, bool):
+            return value
+        if str(value).strip().lower() in {"true", "t", "1", "yes", "y"}:
+            return True
+        if str(value).strip().lower() in {"false", "f", "0", "no", "n"}:
+            return False
+        return None
+
+    if pg_type == "BIGINT":
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    if pg_type == "DOUBLE PRECISION":
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    return str(value)
+
+
+def import_geojson_to_postgis(
+    *,
+    geojson: dict,
+    table_name: str,
+    schema_name: str = "public",
+    geom_col: str = "geom",
+    layer_name: str = "",
+    category: str = "",
+    source_file: str = "",
+    mode: str = "append",
+    create_attribute_columns: bool = True,
+    create_spatial_index: bool = True,
+    section: str = "postgis",
+    max_features: int = 50000,
+) -> dict:
+    """
+    Import a GeoJSON FeatureCollection into PostGIS.
+
+    The import table stores:
+    - id
+    - geom geometry(GEOMETRY,4326)
+    - properties jsonb
+    - metadata columns
+    - optional flattened attribute columns
+
+    mode:
+    - append
+    - overwrite
+    """
+
+    from sqlalchemy import text
+
+    features = (geojson or {}).get("features", []) or []
+    max_features = int(max(1, min(int(max_features or 50000), 200000)))
+    features = features[:max_features]
+
+    if not features:
+        raise ValueError("GeoJSON ไม่มี features สำหรับ import")
+
+    schema_name = _safe_pg_identifier(schema_name, "public")
+    table_name = _safe_pg_identifier(table_name, "imported_layer")
+    geom_col = _safe_pg_identifier(geom_col, "geom")
+
+    mode = str(mode or "append").lower().strip()
+    if mode not in {"append", "overwrite"}:
+        mode = "append"
+
+    # Attribute field mapping
+    prop_keys: list[str] = []
+    for feat in features:
+        for key in (feat.get("properties") or {}).keys():
+            if key not in prop_keys:
+                prop_keys.append(key)
+
+    used_cols: set[str] = set()
+    attr_map: dict[str, str] = {}
+    attr_types: dict[str, str] = {}
+
+    if create_attribute_columns:
+        for key in prop_keys:
+            col = _safe_pg_column_name(key, used_cols)
+            values = [(feat.get("properties") or {}).get(key) for feat in features[:500]]
+            pg_type = _infer_pg_type(values)
+            attr_map[key] = col
+            attr_types[col] = pg_type
+
+    schema_sql = _quote_identifier(schema_name)
+    table_sql = f'{schema_sql}.{_quote_identifier(table_name)}'
+    geom_sql = _quote_identifier(geom_col)
+
+    engine = get_postgis_engine(section)
+
+    inserted = 0
+    skipped = 0
+
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_sql}"))
+
+        if mode == "overwrite":
+            conn.execute(text(f"DROP TABLE IF EXISTS {table_sql} CASCADE"))
+
+        base_cols = f"""
+            id BIGSERIAL PRIMARY KEY,
+            {geom_sql} geometry(GEOMETRY, 4326),
+            properties JSONB,
+            layer_name TEXT,
+            category TEXT,
+            source_file TEXT,
+            imported_at TIMESTAMPTZ DEFAULT NOW()
+        """
+
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS {table_sql} (
+                    {base_cols}
+                )
+                """
+            )
+        )
+
+        # Add attribute columns when needed. Use IF NOT EXISTS for append mode.
+        for col, pg_type in attr_types.items():
+            conn.execute(
+                text(
+                    f"ALTER TABLE {table_sql} ADD COLUMN IF NOT EXISTS {_quote_identifier(col)} {pg_type}"
+                )
+            )
+
+        insert_cols = [geom_col, "properties", "layer_name", "category", "source_file"]
+        insert_exprs = [
+            "ST_SetSRID(ST_GeomFromGeoJSON(:geom_json), 4326)",
+            "CAST(:properties AS JSONB)",
+            ":layer_name",
+            ":category",
+            ":source_file",
+        ]
+
+        for _, col in attr_map.items():
+            insert_cols.append(col)
+            insert_exprs.append(f":attr_{col}")
+
+        col_sql = ", ".join(_quote_identifier(c) for c in insert_cols)
+        val_sql = ", ".join(insert_exprs)
+
+        insert_sql = text(f"INSERT INTO {table_sql} ({col_sql}) VALUES ({val_sql})")
+
+        for feat in features:
+            geom = feat.get("geometry")
+            if not geom:
+                skipped += 1
+                continue
+
+            props = feat.get("properties") or {}
+
+            params: dict[str, Any] = {
+                "geom_json": json.dumps(geom, ensure_ascii=False),
+                "properties": json.dumps(props, ensure_ascii=False),
+                "layer_name": str(layer_name or ""),
+                "category": str(category or ""),
+                "source_file": str(source_file or ""),
+            }
+
+            for original_key, col in attr_map.items():
+                pg_type = attr_types.get(col, "TEXT")
+                params[f"attr_{col}"] = _coerce_value_for_pg(props.get(original_key), pg_type)
+
+            conn.execute(insert_sql, params)
+            inserted += 1
+
+        if create_spatial_index:
+            idx_name = _safe_pg_identifier(f"idx_{schema_name}_{table_name}_{geom_col}_gist", "idx_geom")[:60]
+            conn.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS {_quote_identifier(idx_name)} "
+                    f"ON {table_sql} USING GIST ({geom_sql})"
+                )
+            )
+
+        conn.execute(text(f"ANALYZE {table_sql}"))
+
+    return {
+        "schema_name": schema_name,
+        "table_name": table_name,
+        "full_table_name": f"{schema_name}.{table_name}",
+        "geom_col": geom_col,
+        "inserted": inserted,
+        "skipped": skipped,
+        "mode": mode,
+        "attribute_columns": attr_map,
+        "attribute_types": attr_types,
+        "spatial_index": bool(create_spatial_index),
+        "section": section,
+    }
