@@ -6,6 +6,7 @@ import re
 import tempfile
 import zipfile
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -942,6 +943,443 @@ def render_print_layout_composer(
             st.caption("แสดงเฉพาะ HTML 5,000 ตัวอักษรแรก")
 
 
+
+
+# ---------------------------------------------------------
+# Pixel-Perfect Map Capture helpers
+# ---------------------------------------------------------
+PIXEL_CAPTURE_PRESETS = {
+    "Dashboard 16:9 / 1920x1080": (1920, 1080),
+    "A4 Landscape @150dpi / 1754x1240": (1754, 1240),
+    "A3 Landscape @150dpi / 2480x1754": (2480, 1754),
+    "A1 Landscape preview / 3508x2480": (3508, 2480),
+    "Square 1600x1600": (1600, 1600),
+}
+
+
+def _get_current_map_html(Map) -> str:
+    try:
+        return Map.get_root().render()
+    except Exception as exc:
+        return f"<html><body><h3>Map render failed</h3><pre>{escape(str(exc))}</pre></body></html>"
+
+
+def _build_capture_instruction_markdown(
+    *,
+    title: str,
+    preset: str,
+    width: int,
+    height: int,
+) -> str:
+    lines = [
+        "# Pixel-Perfect Map Capture Instructions",
+        "",
+        f"Title: `{title}`",
+        f"Capture preset: `{preset}`",
+        f"Canvas size: `{width} x {height}` px",
+        "",
+        "## วิธีใช้งาน",
+        "",
+        "1. Download `Pixel Capture HTML`",
+        "2. เปิดไฟล์ HTML ใน Chrome / Edge",
+        "3. รอให้ basemap และ layer โหลดครบ",
+        "4. กดปุ่ม `Print / Save as PDF` ในหน้า HTML หรือใช้ `Ctrl+P`",
+        "5. ถ้าต้องการ PNG ให้ใช้ปุ่ม `Export PNG (experimental)` หรือใช้เครื่องมือ screenshot ของ browser/OS",
+        "",
+        "## หมายเหตุ",
+        "",
+        "- HTML นี้เก็บแผนที่ interactive map ไว้ใน capture sheet เพื่อให้ส่งต่อหรือเปิดบันทึกภาพได้ง่าย",
+        "- การ export PNG ด้วย browser อาจติดข้อจำกัด CORS ของ tile บางแหล่ง เช่น Esri/OSM/GEE",
+        "- ถ้า PNG จากปุ่มทดลองไม่สำเร็จ ให้ใช้ Print/Save as PDF หรือ screenshot จาก browser แทน",
+        "- Scale ที่แสดงมี 2 ค่า: Target export scale และ Current actual scale จาก zoom ปัจจุบัน",
+        "- สำหรับแผนที่ราชการควรตรวจ scale ซ้ำใน QGIS/ArcGIS layout",
+    ]
+    return "\n".join(lines)
+
+
+def _build_pixel_capture_html(
+    *,
+    Map,
+    title: str,
+    subtitle: str,
+    selected_province: str,
+    selected_district: str,
+    preset: str,
+    notes: str,
+    include_toolbar: bool = True,
+) -> str:
+    """
+    Build a browser-side capture HTML file.
+
+    This avoids heavy Streamlit Cloud dependencies like Playwright/Chromium.
+    Users open the HTML in a browser and print/save/capture it there.
+    """
+
+    width, height = PIXEL_CAPTURE_PRESETS.get(
+        preset,
+        PIXEL_CAPTURE_PRESETS["Dashboard 16:9 / 1920x1080"],
+    )
+    map_html = _get_current_map_html(Map)
+    map_srcdoc = escape(map_html, quote=True)
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    view_rows = ""
+    for view in _get_print_view_settings():
+        view_rows += f"""
+        <tr>
+          <td>Map View {view['idx']}</td>
+          <td>{escape(str(view['layer']))}</td>
+          <td>{escape(str(view['basemap']))}</td>
+          <td>{escape(str(view['target_scale']))}</td>
+          <td>{escape(str(view['actual_scale'] or '-'))}</td>
+          <td>{escape(str(view['zoom'] or '-'))}</td>
+        </tr>
+        """
+
+    toolbar = """
+    <div class="toolbar">
+      <button onclick="window.print()">Print / Save as PDF</button>
+      <button onclick="downloadPng()">Export PNG (experimental)</button>
+      <span id="status">รอให้แผนที่โหลดครบก่อน capture</span>
+    </div>
+    """ if include_toolbar else ""
+
+    return f"""<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(title)}</title>
+<style>
+* {{
+  box-sizing: border-box;
+}}
+body {{
+  margin: 0;
+  background: #0b1320;
+  font-family: Arial, "Noto Sans Thai", sans-serif;
+  color: #172033;
+}}
+.toolbar {{
+  position: sticky;
+  top: 0;
+  z-index: 99999;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  background: #07111f;
+  color: white;
+  border-bottom: 1px solid #26384d;
+}}
+.toolbar button {{
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #00bcd4;
+  color: #001018;
+  font-weight: 700;
+  cursor: pointer;
+}}
+.toolbar #status {{
+  font-size: 12px;
+  color: #a9bacb;
+}}
+#capture-sheet {{
+  width: {width}px;
+  height: {height}px;
+  margin: 18px auto;
+  background: white;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 35px rgba(0,0,0,0.45);
+}}
+.header {{
+  height: 92px;
+  padding: 18px 24px 12px 24px;
+  border-bottom: 4px solid #00bcd4;
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 20px;
+}}
+h1 {{
+  margin: 0;
+  font-size: 28px;
+  color: #0b3040;
+}}
+.subtitle {{
+  margin-top: 6px;
+  color: #4d5b68;
+  font-size: 13px;
+}}
+.badge {{
+  font-size: 11px;
+  line-height: 1.4;
+  background: #f4fbfd;
+  border: 1px solid #cce9ef;
+  border-radius: 8px;
+  padding: 8px 10px;
+}}
+.map-frame {{
+  width: 100%;
+  height: calc(100% - 232px);
+  border: 0;
+  display: block;
+}}
+.footer {{
+  height: 140px;
+  border-top: 1px solid #d9e2ec;
+  display: grid;
+  grid-template-columns: 1fr 430px;
+  gap: 14px;
+  padding: 10px 18px;
+  font-size: 11px;
+  color: #273746;
+}}
+.view-table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}}
+.view-table th,
+.view-table td {{
+  border: 1px solid #d9e2ec;
+  padding: 4px 5px;
+  text-align: left;
+}}
+.view-table th {{
+  background: #f4f7fa;
+}}
+.notes {{
+  white-space: pre-wrap;
+  color: #4d5b68;
+  margin-top: 5px;
+}}
+.north {{
+  position: absolute;
+  right: 28px;
+  top: 112px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 24px;
+  color: #0b3040;
+  background: rgba(255,255,255,.85);
+  padding: 6px 10px;
+  border-radius: 8px;
+}}
+.scale-note {{
+  position: absolute;
+  left: 24px;
+  bottom: 152px;
+  background: rgba(255,255,255,.92);
+  border: 1px solid rgba(0,0,0,.2);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 11px;
+  color: #111;
+}}
+@media print {{
+  body {{
+    background: white;
+  }}
+  .toolbar {{
+    display: none;
+  }}
+  #capture-sheet {{
+    margin: 0;
+    box-shadow: none;
+    width: 100vw;
+    height: 100vh;
+  }}
+}}
+</style>
+</head>
+<body>
+{toolbar}
+<div id="capture-sheet">
+  <div class="header">
+    <div>
+      <h1>{escape(title)}</h1>
+      <div class="subtitle">{escape(subtitle)}</div>
+    </div>
+    <div class="badge">
+      <b>Urban OS Pixel Capture</b><br>
+      Preset: {escape(preset)}<br>
+      Size: {width:,} × {height:,} px<br>
+      Area: {escape(selected_province or "-")} / {escape(selected_district or "-")}<br>
+      Generated: {now}
+    </div>
+  </div>
+
+  <div class="north">▲<br>N</div>
+  <div class="scale-note">Scale shown in each map overlay: Target vs Current actual</div>
+  <iframe class="map-frame" srcdoc="{map_srcdoc}"></iframe>
+
+  <div class="footer">
+    <div>
+      <b>Capture Notes</b>
+      <div class="notes">{escape(notes or "Generated from Urban OS Spatial AI Dashboard.")}</div>
+      <div class="notes">Pixel-perfect capture depends on browser rendering, loaded tiles, DPI and CORS policy.</div>
+    </div>
+    <div>
+      <b>Map View Metadata</b>
+      <table class="view-table">
+        <thead>
+          <tr>
+            <th>View</th><th>Layer</th><th>Basemap</th><th>Target</th><th>Current</th><th>Zoom</th>
+          </tr>
+        </thead>
+        <tbody>{view_rows}</tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+async function downloadPng() {{
+  const status = document.getElementById('status');
+  status.textContent = 'กำลังโหลด html2canvas...';
+  try {{
+    if (!window.html2canvas) {{
+      await new Promise((resolve, reject) => {{
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      }});
+    }}
+    status.textContent = 'กำลัง capture PNG...';
+    const node = document.getElementById('capture-sheet');
+    const canvas = await html2canvas(node, {{
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      scale: 1
+    }});
+    const a = document.createElement('a');
+    a.download = 'urban_os_pixel_capture.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+    status.textContent = 'สร้าง PNG แล้ว หากไม่สำเร็จให้ใช้ Print/Save PDF หรือ screenshot';
+  }} catch (err) {{
+    console.error(err);
+    status.textContent = 'PNG capture ไม่สำเร็จ อาจเกิดจาก CORS ของ map tiles ให้ใช้ Print/Save PDF หรือ screenshot แทน';
+    alert('PNG capture ไม่สำเร็จ อาจเกิดจาก CORS ของ map tiles ให้ใช้ Print/Save PDF หรือ screenshot แทน');
+  }}
+}}
+</script>
+</body>
+</html>"""
+
+
+def render_pixel_perfect_capture(
+    *,
+    Map,
+    base_name: str,
+    selected_province: str,
+    selected_district: str,
+) -> None:
+    """
+    Step 8.7.9: Pixel-Perfect Map Capture.
+
+    Safe implementation: generate a standalone browser capture HTML with current
+    interactive map embedded. Users can open it and use Print / Save as PDF or
+    the experimental client-side PNG button.
+    """
+
+    st.markdown("#### Pixel-Perfect Map Capture")
+    st.caption(
+        "สร้าง HTML สำหรับ capture ภาพแผนที่จริงจาก browser ตาม tile/layer ที่โหลดในแผนที่ "
+        "โดยไม่เพิ่ม dependency หนักบน Streamlit Cloud"
+    )
+
+    c1, c2 = st.columns([1.35, 1.0])
+    with c1:
+        title = st.text_input(
+            "ชื่อ Capture",
+            value=st.session_state.get("print_layout_title", "Urban OS Pixel Map Capture"),
+            key="pixel_capture_title",
+        )
+        subtitle = st.text_input(
+            "คำอธิบาย Capture",
+            value=f"{selected_province or 'Thailand'} / {selected_district or 'Selected area'}",
+            key="pixel_capture_subtitle",
+        )
+        notes = st.text_area(
+            "Capture notes",
+            value="Open this HTML in Chrome/Edge, wait for map tiles to load, then Print/Save PDF or Export PNG.",
+            key="pixel_capture_notes",
+            height=85,
+        )
+
+    with c2:
+        preset = st.selectbox(
+            "Capture canvas size",
+            list(PIXEL_CAPTURE_PRESETS.keys()),
+            index=0,
+            key="pixel_capture_preset",
+        )
+        include_toolbar = st.checkbox(
+            "แสดง toolbar ในไฟล์ HTML",
+            value=True,
+            key="pixel_capture_include_toolbar",
+        )
+
+    width, height = PIXEL_CAPTURE_PRESETS.get(preset, PIXEL_CAPTURE_PRESETS["Dashboard 16:9 / 1920x1080"])
+    html = _build_pixel_capture_html(
+        Map=Map,
+        title=title,
+        subtitle=subtitle,
+        selected_province=selected_province,
+        selected_district=selected_district,
+        preset=preset,
+        notes=notes,
+        include_toolbar=include_toolbar,
+    )
+    instruction_md = _build_capture_instruction_markdown(
+        title=title,
+        preset=preset,
+        width=width,
+        height=height,
+    )
+
+    st.info(
+        "วิธีใช้งาน: ดาวน์โหลด HTML → เปิดใน Chrome/Edge → รอแผนที่โหลดครบ → กด Print/Save PDF "
+        "หรือ Export PNG (experimental). ถ้า PNG ติด CORS ให้ใช้ Print/Save PDF หรือ screenshot ของ browser"
+    )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.download_button(
+            "⬇️ Download Pixel Capture HTML",
+            data=html.encode("utf-8"),
+            file_name=f"{base_name}_pixel_capture.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+
+    with col_b:
+        st.download_button(
+            "⬇️ Download Capture Instructions",
+            data=instruction_md.encode("utf-8"),
+            file_name=f"{base_name}_pixel_capture_instructions.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
+
+    show_preview = st.checkbox(
+        "แสดง HTML preview source",
+        value=False,
+        key="pixel_capture_show_html_preview",
+    )
+    if show_preview:
+        st.code(html[:5000], language="html")
+        if len(html) > 5000:
+            st.caption("แสดงเฉพาะ HTML 5,000 ตัวอักษรแรก")
+
+
 def render_map_export_composer(
     *,
     Map,
@@ -965,14 +1403,22 @@ def render_map_export_composer(
             f"urban_os_{selected_province or 'thailand'}_{selected_district or 'area'}"
         )
 
-        tab_map, tab_print, tab_gis, tab_report = st.tabs(
-            ["🗺️ Map Export", "🖨️ Print Layout", "🧩 GIS Export", "📝 Layout Summary"]
+        tab_map, tab_capture, tab_print, tab_gis, tab_report = st.tabs(
+            ["🗺️ Map Export", "📸 Pixel Capture", "🖨️ Print Layout", "🧩 GIS Export", "📝 Layout Summary"]
         )
 
         with tab_map:
             st.markdown("#### Interactive HTML Map")
             st.caption("ส่งออกแผนที่แบบ interactive HTML จาก current map layer stack")
             _render_html_export(Map, base_name)
+
+        with tab_capture:
+            render_pixel_perfect_capture(
+                Map=Map,
+                base_name=base_name,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
 
         with tab_print:
             render_print_layout_composer(
