@@ -26,6 +26,7 @@ from components.system_diagnostics import render_system_diagnostics_panel
 from components.advanced_criteria_audit import render_advanced_criteria_score_audit
 from components.map_export_composer import render_map_export_composer
 from components.planning_report_generator import render_planning_report_generator_panel
+from components.candidate_ranking import render_candidate_ranking_panel
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -265,6 +266,13 @@ def main() -> None:
         pass
 
     # -----------------------------------------------------
+    # 9.3 Mode: Candidate Ranking
+    # -----------------------------------------------------
+    elif selected_mode == "Candidate Ranking":
+        # ใช้เฉพาะ base map + boundary เพื่อประกอบการจัดอันดับ
+        pass
+
+    # -----------------------------------------------------
     # 9.5 Mode: Spatial Database
     # -----------------------------------------------------
     elif selected_mode == "Spatial Database":
@@ -357,6 +365,31 @@ def main() -> None:
 
     elif selected_mode == "Planning Report":
         render_planning_report_generator_panel(
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่อ้างอิงและ Export Composer", expanded=False):
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
+
+    elif selected_mode == "Candidate Ranking":
+        render_candidate_ranking_panel(
             selected_province=selected_province,
             selected_district=selected_district,
             is_whole_country=is_whole_country,
@@ -525,6 +558,10 @@ def main() -> None:
         pass
 
     elif selected_mode == "Planning Report":
+        # Already rendered above the map in data-management panel mode.
+        pass
+
+    elif selected_mode == "Candidate Ranking":
         # Already rendered above the map in data-management panel mode.
         pass
 

@@ -131,6 +131,12 @@ def _evidence_context(
             "settings": st.session_state.get("candidate_export_settings") or {},
             "table": candidate_df,
         },
+        "candidate_ranking": {
+            "has_result": st.session_state.get("candidate_ranking_df") is not None,
+            "settings": st.session_state.get("candidate_ranking_settings") or {},
+            "table": st.session_state.get("candidate_ranking_df"),
+            "generated_at": st.session_state.get("candidate_ranking_generated_at", ""),
+        },
         "feasibility": {
             "payload": st.session_state.get("feasibility_payload") or {},
             "priority_table": st.session_state.get("feasibility_priority_df"),
@@ -204,6 +210,13 @@ def _summary_csv_dataframe(evidence: dict) -> pd.DataFrame:
     add("Candidate", "has_result", cand.get("has_result", False))
     add("Candidate", "count", cand.get("count", 0))
 
+    ranking = evidence.get("candidate_ranking", {})
+    add("Candidate Ranking", "has_result", ranking.get("has_result", False))
+    ranking_table = ranking.get("table")
+    if ranking_table is not None and not getattr(ranking_table, "empty", True):
+        add("Candidate Ranking", "top_priority", ranking_table.iloc[0].get("priority", ""))
+        add("Candidate Ranking", "top_score", ranking_table.iloc[0].get("rank_score", ""))
+
     imported = evidence.get("imported_layers", {})
     add("Imported Layers", "last_layer_name", imported.get("last_layer_name", ""))
     add("Imported Layers", "last_category", imported.get("last_category", ""))
@@ -241,6 +254,14 @@ def _recommendations(evidence: dict) -> list[str]:
 
     if evidence.get("candidate_areas", {}).get("has_result"):
         recs.append("นำ Candidate Areas ไปตรวจสอบภาคสนามและเปรียบเทียบกับแผนการลงทุนโครงสร้างพื้นฐานระยะสั้น–กลาง")
+
+    ranking_table = (evidence.get("candidate_ranking") or {}).get("table")
+    if ranking_table is not None and not getattr(ranking_table, "empty", True):
+        top = ranking_table.iloc[0]
+        recs.append(
+            f"ใช้พื้นที่ Candidate อันดับ 1 Priority {top.get('priority')} "
+            f"เป็นพื้นที่ตั้งต้นสำหรับ feasibility study โดยมีคะแนน {top.get('rank_score')}"
+        )
 
     imported = evidence.get("imported_layers", {})
     if imported.get("last_feature_count", 0):
@@ -343,6 +364,18 @@ def build_planning_report_markdown(evidence: dict) -> str:
                 f"- จำนวนพื้นที่ candidate: {candidate.get('count', 0):,}",
                 "",
                 _df_to_markdown(candidate.get("table"), max_rows=30),
+                "",
+            ]
+        )
+
+        ranking = evidence.get("candidate_ranking", {})
+        lines.extend(
+            [
+                "## 5.1 Candidate Area Ranking",
+                f"- มีผลจัดอันดับ: {ranking.get('has_result', False)}",
+                f"- Generated at: {ranking.get('generated_at') or '-'}",
+                "",
+                _df_to_markdown(ranking.get("table"), max_rows=30),
                 "",
             ]
         )

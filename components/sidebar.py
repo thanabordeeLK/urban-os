@@ -258,8 +258,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Planning Report", "Spatial Database", "System Diagnostics", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "file-earmark-text", "hdd-network", "activity", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Candidate Ranking", "Planning Report", "Spatial Database", "System Diagnostics", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "trophy", "file-earmark-text", "hdd-network", "activity", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -377,6 +377,19 @@ def render_sidebar() -> dict:
             )
 
             st.caption("นำเข้า Shapefile ZIP, GeoJSON, KML/KMZ และ CSV พิกัด X,Y")
+
+        # -------------------------------------------------
+        # Candidate Ranking Mode
+        # -------------------------------------------------
+        elif selected_mode == "Candidate Ranking":
+            st.markdown("### 🏆 Candidate Ranking")
+
+            basemap_choice = render_basemap_selector(
+                key="candidate_ranking_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("จัดอันดับพื้นที่ Candidate และสร้างข้อเสนอแนะเชิงผังเมือง")
 
         # -------------------------------------------------
         # Planning Report Mode
