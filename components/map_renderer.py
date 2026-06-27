@@ -491,6 +491,9 @@ def add_boundary(Map, roi, is_whole_country: bool = False):
 
     try:
         if roi is None:
+            if not bool(st.session_state.get("gee_ready", False)):
+                # Non-GEE public/report mode can run without ROI.
+                return Map
             st.warning("ไม่พบ ROI สำหรับพื้นที่ที่เลือก")
             return Map
 

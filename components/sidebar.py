@@ -494,9 +494,40 @@ def render_sidebar() -> dict:
 def render_area_selector():
     """
     แสดงตัวเลือกพื้นที่วิเคราะห์ จังหวัด/อำเภอ
+
+    ถ้า Google Earth Engine ยังไม่พร้อม จะไม่เรียก get_provinces/get_districts/get_roi
+    เพื่อไม่ให้หน้า public/report mode แสดง error ซ้ำ ๆ
     """
 
     st.markdown("**📍 กำหนดพื้นที่วิเคราะห์**")
+
+    if not bool(st.session_state.get("gee_ready", False)):
+        selected_province = THAILAND_ALL_LABEL
+        selected_district = THAILAND_DISTRICT_ALL_LABEL
+        is_whole_country = True
+
+        st.info(
+            "GEE ยังไม่พร้อม จึงปิดการเลือกพื้นที่แบบ dynamic ชั่วคราว "
+            "และใช้ขอบเขตอ้างอิงเป็นระดับประเทศสำหรับหน้าที่ไม่ต้องใช้ GEE"
+        )
+
+        st.selectbox(
+            "เลือกจังหวัด (Province)",
+            [selected_province],
+            index=0,
+            disabled=True,
+            key="selected_province_no_gee",
+        )
+
+        st.selectbox(
+            "เลือกอำเภอ (District)",
+            [selected_district],
+            index=0,
+            disabled=True,
+            key="selected_district_no_gee",
+        )
+
+        return selected_province, selected_district, None, is_whole_country
 
     try:
         provinces = get_provinces()

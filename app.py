@@ -74,6 +74,9 @@ def main() -> None:
 
     if not gee_ready:
         render_gee_auth_recovery_panel(compact=True)
+        st.caption(
+            "Public/report pages will remain available. Analysis pages are hidden until GEE Service Account is configured."
+        )
 
     # -----------------------------------------------------
     # 3. Sidebar state
