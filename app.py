@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from config.settings import configure_page, inject_css
-from config.auth import initialize_earth_engine
+from config.auth import initialize_earth_engine, render_gee_auth_recovery_panel
 
 from components.sidebar import render_sidebar
 from components.map_renderer import create_base_map, add_boundary, render_map, render_map_workspace
@@ -28,6 +28,7 @@ from components.map_export_composer import render_map_export_composer
 from components.planning_report_generator import render_planning_report_generator_panel
 from components.candidate_ranking import render_candidate_ranking_panel
 from components.ai_planning_recommendation import render_ai_planning_recommendation_panel
+from components.access_control import can_access_mode, get_current_user_role
 
 from core_engine.general_plan import add_general_plan_layers
 from core_engine.ai_simulation import (
@@ -68,7 +69,11 @@ def main() -> None:
     # -----------------------------------------------------
     # 2. Initialize Google Earth Engine
     # -----------------------------------------------------
-    initialize_earth_engine()
+    gee_auth_status = initialize_earth_engine()
+    gee_ready = bool(gee_auth_status.get("ready", False))
+
+    if not gee_ready:
+        render_gee_auth_recovery_panel(compact=True)
 
     # -----------------------------------------------------
     # 3. Sidebar state
@@ -76,6 +81,13 @@ def main() -> None:
     state = render_sidebar()
 
     selected_mode = state.get("selected_mode", "General Plan")
+    current_role = get_current_user_role()
+    can_access, access_reason = can_access_mode(selected_mode, role=current_role, gee_ready=gee_ready)
+    if not can_access:
+        st.error(f"ไม่สามารถเข้าเมนู {selected_mode}: {access_reason}")
+        st.info("กรุณาเลือกเมนูที่ระบบเปิดให้ตามสิทธิ์ผู้ใช้และสถานะ Google Earth Engine")
+        selected_mode = "Planning Report"
+
     roi = state.get("roi")
     is_whole_country = state.get("is_whole_country", False)
     basemap_choice = state.get("basemap_choice", "OpenStreetMap")
@@ -111,7 +123,18 @@ def main() -> None:
     # -----------------------------------------------------
     # 5. Mode: General Plan
     # -----------------------------------------------------
-    if selected_mode == "General Plan":
+    gee_blocked_modes = {
+        "General Plan",
+        "AI Simulation",
+        "Suitability Analysis",
+        "Urban Heat Island",
+        "Multi-Agent",
+    }
+
+    if (not gee_ready) and selected_mode in gee_blocked_modes:
+        render_gee_auth_recovery_panel(compact=False)
+
+    elif selected_mode == "General Plan":
         add_general_plan_layers(
             Map=Map,
             roi=roi,
