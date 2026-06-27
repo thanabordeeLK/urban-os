@@ -400,23 +400,6 @@ def main() -> None:
         )
         management_panel_rendered = True
 
-        with st.expander("🗺️ แสดง/ซ่อนแผนที่และ Export Composer", expanded=False):
-            render_map_workspace(
-                Map,
-                map_layout_config,
-                roi=roi,
-                is_whole_country=is_whole_country,
-                selected_province=selected_province,
-                selected_district=selected_district,
-            )
-            render_map_export_composer(
-                Map=Map,
-                roi=roi,
-                selected_province=selected_province,
-                selected_district=selected_district,
-                is_whole_country=is_whole_country,
-            )
-
     elif selected_mode == "พูดคุยข้อกฎหมายผังเมือง":
         render_legal_planning_chat(
             is_member=(current_role != "ผู้ใช้ทั่วไป"),

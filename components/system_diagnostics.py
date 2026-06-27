@@ -9,6 +9,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from config.external_apps import external_apps_status
+
 
 SENSITIVE_KEYWORDS = [
     "password",
@@ -257,6 +259,14 @@ def render_system_diagnostics_panel(
                     f"mode={st.session_state.get('gee_auth_mode', '-')}, "
                     f"project={(st.session_state.get('gee_auth_status') or {}).get('project_id', '-')}, "
                     f"error={st.session_state.get('gee_error', '')[:120]}"
+                ),
+            },
+            {
+                "หมวด": "External Apps",
+                "สถานะ": _status_icon(bool(external_apps_status().get("LANDUSE_APP_URL")) or bool(external_apps_status().get("LEGAL_CHAT_APP_URL"))),
+                "รายละเอียด": (
+                    f"landuse={bool(external_apps_status().get('LANDUSE_APP_URL'))}, "
+                    f"legal={bool(external_apps_status().get('LEGAL_CHAT_APP_URL'))}"
                 ),
             },
             {

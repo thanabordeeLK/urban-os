@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime
-
 import pandas as pd
 import streamlit as st
 
-try:
-    from llm.openai_client import ask_openai
-except Exception:
-    ask_openai = None
+from config.external_apps import build_external_url, external_apps_status
 
 
 def _safe_df(key: str) -> pd.DataFrame | None:
@@ -23,6 +17,15 @@ def _role() -> str:
     return st.session_state.get("urban_os_user_role", "ผู้ใช้ทั่วไป")
 
 
+def _role_slug() -> str:
+    role = _role()
+    if "ผู้ดูแล" in role:
+        return "admin"
+    if "สมาชิก" in role:
+        return "member"
+    return "public"
+
+
 def _metric_row() -> None:
     summary = st.session_state.get("suitability_summary") or {}
     heat = st.session_state.get("uhi_heat_summary") or {}
@@ -33,6 +36,45 @@ def _metric_row() -> None:
     c2.metric("สัดส่วน Candidate", f"{summary.get('candidate_percent', 0):.1f}%")
     c3.metric("Heat Hotspot", f"{heat.get('hotspot_percent', 0):.1f}%")
     c4.metric("Candidate Ranked", f"{0 if ranking_df is None else len(ranking_df):,}")
+
+
+def _render_external_launcher(
+    *,
+    title: str,
+    caption: str,
+    app_key: str,
+    portal: str,
+    role: str | None = None,
+    button_label: str = "เปิดแอป",
+    expected_repo: str = "",
+    local_hint: str = "",
+) -> None:
+    st.markdown(f"### {title}")
+    st.caption(caption)
+
+    role = role or _role_slug()
+    app_url = build_external_url(app_key, role=role, portal=portal)
+
+    if app_url:
+        st.link_button(button_label, app_url, use_container_width=True)
+        st.code(app_url, language="text")
+    else:
+        st.warning("ยังไม่ได้ตั้งค่า URL ของแอปภายนอกใน Streamlit Secrets / environment")
+        st.markdown("#### ตั้งค่า Secrets")
+        if app_key == "landuse_checker":
+            st.code('LANDUSE_APP_URL = "https://your-landuse-checker.streamlit.app"', language="toml")
+        elif app_key == "planning_law_chat":
+            st.code('LEGAL_CHAT_APP_URL = "https://your-planning-law-chat.streamlit.app"', language="toml")
+        else:
+            st.code(f'{app_key.upper()}_URL = "https://your-app-url"', language="toml")
+
+    if expected_repo:
+        st.markdown("#### Repo / App ที่ควรแยก")
+        st.info(expected_repo)
+
+    if local_hint:
+        st.markdown("#### Local development")
+        st.code(local_hint, language="text")
 
 
 def render_executive_portal(*, gee_ready: bool, selected_province: str, selected_district: str, is_whole_country: bool) -> None:
@@ -51,17 +93,19 @@ def render_executive_portal(*, gee_ready: bool, selected_province: str, selected
     with col2:
         st.info("ดูแผนที่สาธารณะเมื่อระบบ GEE พร้อม")
     with col3:
-        st.info("ถามข้อมูลกฎหมายผังเมืองแบบทั่วไป")
+        st.info("ถามข้อมูลกฎหมายผังเมืองแบบทั่วไปผ่านแอป Legal Chat")
 
-    st.markdown("#### คำแนะนำ")
-    st.write(
-        "หากต้องการวิเคราะห์พื้นที่ นำเข้า GIS หรือสร้างรายงานเชิงลึก ให้เข้าสู่ระบบเป็นสมาชิก / วิเคราะห์ได้"
-    )
+    st.markdown("#### เชื่อมไปยังแอปหลัก")
+    portal_home = build_external_url("portal_home", role=_role_slug(), portal="executive")
+    if portal_home:
+        st.link_button("กลับหน้า USDC / Urban OS Portal", portal_home, use_container_width=True)
+
+    st.write("หากต้องการวิเคราะห์พื้นที่ นำเข้า GIS หรือสร้างรายงานเชิงลึก ให้เข้าสู่ระบบเป็นสมาชิก / วิเคราะห์ได้")
 
 
 def render_research_portal(*, gee_ready: bool) -> None:
     st.markdown("### 📊 นักวิเคราะห์ วิจัย / Analysis Workspace")
-    st.caption("ศูนย์รวมเครื่องมือสำหรับสมาชิกที่ต้องการวิเคราะห์ข้อมูลเมือง")
+    st.caption("ศูนย์รวมเครื่องมือสำหรับสมาชิกที่ต้องการวิเคราะห์ข้อมูลเมืองใน Urban OS Core")
 
     if not gee_ready:
         st.warning("GEE ยังไม่พร้อม: Suitability / UHI / General Plan จะยังใช้งานไม่ได้จนกว่าจะตั้งค่า Service Account")
@@ -79,118 +123,80 @@ def render_research_portal(*, gee_ready: bool) -> None:
 """
     )
 
-    st.markdown("#### เครื่องมือหลัก")
+    st.markdown("#### เครื่องมือหลักใน Urban OS Core")
     c1, c2, c3 = st.columns(3)
     c1.success("Suitability Analysis")
     c2.success("Urban Heat Island")
     c3.success("Candidate Ranking / AI Recommendation")
 
+    st.markdown("#### แอปเฉพาะเรื่อง")
+    c4, c5 = st.columns(2)
+    with c4:
+        landuse_url = build_external_url("landuse_checker", role=_role_slug(), portal="landuse")
+        if landuse_url:
+            st.link_button("เปิด Land Use Checker", landuse_url, use_container_width=True)
+        else:
+            st.info("ยังไม่ได้ตั้งค่า LANDUSE_APP_URL")
+    with c5:
+        legal_url = build_external_url("planning_law_chat", role=_role_slug(), portal="legal")
+        if legal_url:
+            st.link_button("เปิด Planning Law Chat", legal_url, use_container_width=True)
+        else:
+            st.info("ยังไม่ได้ตั้งค่า LEGAL_CHAT_APP_URL")
+
 
 def render_landuse_portal(*, gee_ready: bool) -> None:
-    st.markdown("### 🗺️ ตรวจสอบการใช้ประโยชน์ที่ดิน / Land Use Monitoring")
-    st.caption("พื้นที่ทำงานสำหรับนำเข้าข้อมูล GIS ตรวจสอบ zoning/land use และใช้ข้อมูลเป็นปัจจัยวิเคราะห์")
-
-    st.markdown("#### Workflow แนะนำ")
-    st.markdown(
-        """
-1. Upload Shapefile / GeoJSON / KML / CSV ใน Import Wizard
-2. Preview geometry และตรวจ attribute
-3. Import to PostGIS หากต้องการเก็บถาวร
-4. เปิด Imported Layer Overlay
-5. ใช้ Imported Layer ใน Suitability Criteria
-6. Export Map / Report
-"""
+    _render_external_launcher(
+        title="🗺️ ตรวจสอบการใช้ประโยชน์ที่ดิน / Land Use Checker",
+        caption=(
+            "ฟังก์ชันนี้ถูกแยกออกเป็นแอปเฉพาะเรื่อง เพื่อให้ตรวจ parcel, zoning, land use, "
+            "ข้อจำกัดรายแปลง และรายงาน Land Use Check ได้ชัดเจนกว่า Urban OS Core"
+        ),
+        app_key="landuse_checker",
+        portal="landuse",
+        role=_role_slug(),
+        button_label="เปิด Land Use Checker",
+        expected_repo="แนะนำ repo: thanabordeeLK/usdc-landuse-checker",
+        local_hint="Land Use Checker local: http://localhost:8502\nUrban OS Core local: http://localhost:8501",
     )
 
-    if not gee_ready:
-        st.info("ยังสามารถใช้ Import Wizard / PostGIS / Overlay บางส่วนได้ แม้ GEE ยังไม่พร้อม")
-
-
-def _rule_based_legal_answer(question: str, member: bool = False) -> str:
-    q = question.lower()
-
-    if not question.strip():
-        return "กรุณาพิมพ์คำถามเกี่ยวกับกฎหมายผังเมือง การใช้ประโยชน์ที่ดิน หรือขั้นตอนวิเคราะห์พื้นที่"
-
-    if "ผังเมือง" in q or "zoning" in q or "โซน" in q:
-        base = (
-            "การตรวจสอบข้อกำหนดผังเมืองควรเริ่มจากตรวจเขตผังเมืองรวม สี/ประเภทการใช้ประโยชน์ที่ดิน "
-            "ข้อกำหนดอาคาร ความหนาแน่น ระยะร่น และข้อจำกัดเฉพาะพื้นที่ "
-        )
-    elif "ที่ดิน" in q or "ใช้ประโยชน์" in q:
-        base = (
-            "การใช้ประโยชน์ที่ดินควรตรวจทั้งสภาพการใช้จริง เอกสารสิทธิ์ ข้อกำหนดผังเมือง "
-            "พื้นที่เสี่ยงภัย และข้อจำกัดด้านสิ่งแวดล้อมก่อนตัดสินใจพัฒนา "
-        )
-    elif "กฎหมาย" in q or "พรบ" in q:
-        base = (
-            "ประเด็นกฎหมายควรอ้างอิงกฎหมายและประกาศที่มีผลใช้บังคับล่าสุด พร้อมตรวจสอบกับหน่วยงานเจ้าของอำนาจ "
-            "เช่น องค์กรปกครองส่วนท้องถิ่น โยธาธิการและผังเมือง หรือหน่วยงานสิ่งแวดล้อม "
-        )
-    else:
-        base = (
-            "คำถามนี้ควรพิจารณาร่วมกับข้อมูลพื้นที่จริง ผังเมืองที่มีผลใช้บังคับ ข้อจำกัดด้านสิ่งแวดล้อม "
-            "และข้อเท็จจริงของโครงการ "
-        )
-
-    if member:
-        base += "ในโหมดสมาชิก สามารถนำเข้าชั้นข้อมูล zoning/land use แล้วเชื่อมกับ Suitability, Candidate Ranking และ AI Recommendation เพื่อสร้างข้อเสนอเชิงผังเมืองได้"
-    else:
-        base += "สำหรับผู้ใช้ทั่วไป คำตอบนี้เป็นข้อมูลเบื้องต้น ไม่ใช่คำวินิจฉัยทางกฎหมาย"
-
-    return base
+    st.markdown("#### ขอบเขตงานของแอปนี้")
+    st.markdown(
+        """
+- ค้นหา/อัปโหลดแปลงที่ดิน
+- ตรวจ zoning / land use
+- ตรวจพื้นที่เสี่ยง / พื้นที่กันออก
+- สรุปข้อจำกัดรายแปลง
+- ออกรายงาน Land Use Check
+"""
+    )
 
 
 def render_legal_planning_chat(*, is_member: bool = False) -> None:
-    st.markdown("### ⚖️ พูดคุยข้อกฎหมายผังเมือง")
-    st.caption("ถาม-ตอบกฎหมายผังเมือง การใช้ประโยชน์ที่ดิน และข้อควรระวังเชิงพื้นที่")
-
-    question = st.text_area(
-        "พิมพ์คำถาม",
-        value=st.session_state.get("legal_chat_question", ""),
-        height=120,
-        key="legal_chat_question",
-        placeholder="เช่น พื้นที่สีเขียวพัฒนาอาคารได้หรือไม่ / ต้องตรวจอะไรบ้างก่อนเปลี่ยนการใช้ประโยชน์ที่ดิน",
+    _render_external_launcher(
+        title="⚖️ พูดคุยข้อกฎหมายผังเมือง / Planning Law Chat",
+        caption=(
+            "ฟังก์ชันนี้ถูกแยกออกเป็นแอปเฉพาะเรื่อง เพื่อให้จัดการ legal knowledge base, "
+            "เอกสารกฎหมาย, public/member chat quota และ legal memo ได้ปลอดภัยกว่า"
+        ),
+        app_key="planning_law_chat",
+        portal="legal",
+        role=_role_slug(),
+        button_label="เปิด Planning Law Chat",
+        expected_repo="แนะนำ repo: thanabordeeLK/usdc-planning-law-chat",
+        local_hint="Planning Law Chat local: http://localhost:8503\nUrban OS Core local: http://localhost:8501",
     )
 
-    use_gpt = False
+    st.markdown("#### รูปแบบสิทธิ์ที่แนะนำในแอป Legal Chat")
     if is_member:
-        use_gpt = st.checkbox(
-            "ใช้ GPT Legal/Planning Assistant",
-            value=False,
-            key="legal_chat_use_gpt",
-            help="ต้องตั้งค่า OPENAI_API_KEY ก่อน",
-        )
+        st.success("สมาชิก: ใช้ Legal Assistant แบบเต็ม เช่น วิเคราะห์เอกสาร สร้าง planning memo และเชื่อมกับ project/zoning")
+    else:
+        st.info("ผู้ใช้ทั่วไป: ถาม-ตอบทั่วไป จำกัดจำนวนครั้ง และไม่วิเคราะห์เอกสารเฉพาะโครงการ")
 
-    if st.button("ตอบคำถาม", use_container_width=True, key="legal_chat_answer_btn"):
-        answer = _rule_based_legal_answer(question, member=is_member)
+    st.caption("หมายเหตุ: คำตอบด้านกฎหมายเป็นข้อมูลเบื้องต้น ต้องตรวจเอกสารทางกฎหมายและหน่วยงานที่เกี่ยวข้องก่อนใช้งานจริง")
 
-        if use_gpt and ask_openai is not None:
-            prompt = f"""
-โปรดตอบคำถามกฎหมายผังเมืองภาษาไทยแบบระมัดระวัง ไม่ให้เป็นคำวินิจฉัยทางกฎหมาย
-ให้ระบุขั้นตอนตรวจสอบ ข้อมูลที่ต้องใช้ และข้อควรปรึกษาหน่วยงานรัฐ
 
-คำถาม:
-{question}
-
-บริบทระบบ:
-role={_role()}
-time={datetime.now().isoformat()}
-"""
-            ai_answer = ask_openai(
-                prompt=prompt,
-                system_prompt="You are a Thai urban planning legal assistant. Provide cautious planning/legal guidance, not legal judgment.",
-                temperature=0.2,
-            )
-            answer = ai_answer
-
-        st.session_state["legal_chat_last_answer"] = answer
-
-    last = st.session_state.get("legal_chat_last_answer")
-    if last:
-        st.markdown("#### คำตอบ")
-        st.info(last)
-
-    st.caption(
-        "หมายเหตุ: คำตอบเป็นข้อมูลเบื้องต้น ต้องตรวจเอกสารทางกฎหมายและปรึกษาหน่วยงานที่เกี่ยวข้องก่อนใช้ประกอบการตัดสินใจ"
-    )
+def render_external_apps_status_panel() -> None:
+    st.markdown("### 🔗 External App Links")
+    status = external_apps_status()
+    st.json(status)
