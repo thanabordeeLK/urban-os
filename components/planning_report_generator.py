@@ -137,6 +137,12 @@ def _evidence_context(
             "table": st.session_state.get("candidate_ranking_df"),
             "generated_at": st.session_state.get("candidate_ranking_generated_at", ""),
         },
+        "ai_planning_recommendation": {
+            "has_result": bool(st.session_state.get("ai_planning_recommendation_report_md")),
+            "report_md": st.session_state.get("ai_planning_recommendation_report_md", ""),
+            "payload": st.session_state.get("ai_planning_recommendation_payload") or {},
+            "rule_table": st.session_state.get("ai_planning_rule_recommendation_df"),
+        },
         "feasibility": {
             "payload": st.session_state.get("feasibility_payload") or {},
             "priority_table": st.session_state.get("feasibility_priority_df"),
@@ -217,6 +223,12 @@ def _summary_csv_dataframe(evidence: dict) -> pd.DataFrame:
         add("Candidate Ranking", "top_priority", ranking_table.iloc[0].get("priority", ""))
         add("Candidate Ranking", "top_score", ranking_table.iloc[0].get("rank_score", ""))
 
+    ai_rec = evidence.get("ai_planning_recommendation", {})
+    add("AI Recommendation", "has_result", ai_rec.get("has_result", False))
+    rule_table = ai_rec.get("rule_table")
+    if rule_table is not None and not getattr(rule_table, "empty", True):
+        add("AI Recommendation", "top_suggested_land_use", rule_table.iloc[0].get("suggested_land_use", ""))
+
     imported = evidence.get("imported_layers", {})
     add("Imported Layers", "last_layer_name", imported.get("last_layer_name", ""))
     add("Imported Layers", "last_category", imported.get("last_category", ""))
@@ -261,6 +273,14 @@ def _recommendations(evidence: dict) -> list[str]:
         recs.append(
             f"ใช้พื้นที่ Candidate อันดับ 1 Priority {top.get('priority')} "
             f"เป็นพื้นที่ตั้งต้นสำหรับ feasibility study โดยมีคะแนน {top.get('rank_score')}"
+        )
+
+    ai_rule_table = (evidence.get("ai_planning_recommendation") or {}).get("rule_table")
+    if ai_rule_table is not None and not getattr(ai_rule_table, "empty", True):
+        top = ai_rule_table.iloc[0]
+        recs.append(
+            f"ข้อเสนอแนะ AI ระบุให้พื้นที่อันดับ 1 เหมาะกับ {top.get('suggested_land_use')} "
+            f"และควรดำเนินการแบบ {top.get('development_phase')}"
         )
 
     imported = evidence.get("imported_layers", {})
@@ -379,6 +399,25 @@ def build_planning_report_markdown(evidence: dict) -> str:
                 "",
             ]
         )
+
+        ai_rec = evidence.get("ai_planning_recommendation", {})
+        lines.extend(
+            [
+                "## 5.2 AI Planning Recommendation",
+                f"- มีข้อเสนอแนะจาก Agent: {ai_rec.get('has_result', False)}",
+                "",
+                _df_to_markdown(ai_rec.get("rule_table"), max_rows=30),
+                "",
+            ]
+        )
+        if ai_rec.get("report_md"):
+            lines.extend(
+                [
+                    "### 5.2.1 AI Recommendation Report",
+                    ai_rec.get("report_md", ""),
+                    "",
+                ]
+            )
 
     if settings.get("include_imported", True):
         imported = evidence.get("imported_layers", {})

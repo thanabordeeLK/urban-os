@@ -258,8 +258,8 @@ def render_sidebar() -> dict:
 
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Candidate Ranking", "Planning Report", "Spatial Database", "System Diagnostics", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "trophy", "file-earmark-text", "hdd-network", "activity", "robot"],
+            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Candidate Ranking", "AI Recommendation", "Planning Report", "Spatial Database", "System Diagnostics", "Multi-Agent"],
+            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "trophy", "stars", "file-earmark-text", "hdd-network", "activity", "robot"],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -390,6 +390,19 @@ def render_sidebar() -> dict:
             )
 
             st.caption("จัดอันดับพื้นที่ Candidate และสร้างข้อเสนอแนะเชิงผังเมือง")
+
+        # -------------------------------------------------
+        # AI Recommendation Mode
+        # -------------------------------------------------
+        elif selected_mode == "AI Recommendation":
+            st.markdown("### 🤖 AI Recommendation")
+
+            basemap_choice = render_basemap_selector(
+                key="ai_recommendation_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("สร้างข้อเสนอแนะเชิงผังเมืองจาก Candidate Ranking และ Evidence ของระบบ")
 
         # -------------------------------------------------
         # Planning Report Mode
