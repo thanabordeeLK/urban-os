@@ -51,6 +51,7 @@ from components.access_control import (
     icon_for_mode,
     render_user_access_panel,
     render_access_summary,
+    get_default_mode_for_menu,
 )
 
 from config.settings import (
@@ -269,12 +270,15 @@ def render_sidebar() -> dict:
         st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
 
         available_modes = available_modes_for_current_user(gee_ready=gee_ready)
+        default_mode = get_default_mode_for_menu(available_modes)
+        default_index = available_modes.index(default_mode) if default_mode in available_modes else 0
+
         selected_mode = option_menu(
             menu_title=None,
             options=available_modes,
             icons=[icon_for_mode(mode) for mode in available_modes],
             menu_icon="cast",
-            default_index=0,
+            default_index=default_index,
             styles={
                 "container": {
                     "padding": "0!important",
@@ -313,9 +317,52 @@ def render_sidebar() -> dict:
         multi_agent_settings = None
 
         # -------------------------------------------------
+        # Portal landing modes
+        # -------------------------------------------------
+        if selected_mode == "ผู้บริหารเมือง":
+            st.markdown("### 🏙️ ผู้บริหารเมือง")
+
+            basemap_choice = render_basemap_selector(
+                key="executive_portal_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("หน้าอ่านข้อมูลเมืองสำหรับผู้บริหารและผู้ใช้ทั่วไป")
+
+        elif selected_mode == "นักวิเคราะห์ วิจัย":
+            st.markdown("### 📊 นักวิเคราะห์ วิจัย")
+
+            basemap_choice = render_basemap_selector(
+                key="research_portal_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("ศูนย์รวมเครื่องมือวิเคราะห์สำหรับสมาชิก")
+
+        elif selected_mode == "ตรวจสอบการใช้ประโยชน์ที่ดิน":
+            st.markdown("### 🗺️ ตรวจสอบการใช้ประโยชน์ที่ดิน")
+
+            basemap_choice = render_basemap_selector(
+                key="landuse_portal_basemap",
+                default="Esri Satellite",
+            )
+
+            st.caption("นำเข้า ตรวจสอบ และเชื่อมชั้นข้อมูล land use / zoning")
+
+        elif selected_mode == "พูดคุยข้อกฎหมายผังเมือง":
+            st.markdown("### ⚖️ พูดคุยข้อกฎหมายผังเมือง")
+
+            basemap_choice = render_basemap_selector(
+                key="legal_portal_basemap",
+                default="OpenStreetMap",
+            )
+
+            st.caption("ถาม-ตอบกฎหมายผังเมืองและข้อควรระวังเบื้องต้น")
+
+        # -------------------------------------------------
         # General Plan Mode
         # -------------------------------------------------
-        if selected_mode == "General Plan":
+        elif selected_mode == "General Plan":
             st.markdown("### 🥞 Data Layers")
 
             basemap_choice = render_basemap_selector(

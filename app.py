@@ -28,6 +28,12 @@ from components.map_export_composer import render_map_export_composer
 from components.planning_report_generator import render_planning_report_generator_panel
 from components.candidate_ranking import render_candidate_ranking_panel
 from components.ai_planning_recommendation import render_ai_planning_recommendation_panel
+from components.portal_pages import (
+    render_executive_portal,
+    render_research_portal,
+    render_landuse_portal,
+    render_legal_planning_chat,
+)
 from components.access_control import can_access_mode, get_current_user_role
 
 from core_engine.general_plan import add_general_plan_layers
@@ -346,7 +352,78 @@ def main() -> None:
     # Otherwise the tabs appear below a large map and users may think the panel is missing.
     management_panel_rendered = False
 
-    if selected_mode == "Local Data Manager":
+    if selected_mode == "ผู้บริหารเมือง":
+        render_executive_portal(
+            gee_ready=gee_ready,
+            selected_province=selected_province,
+            selected_district=selected_district,
+            is_whole_country=is_whole_country,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่สาธารณะ", expanded=True):
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
+
+    elif selected_mode == "นักวิเคราะห์ วิจัย":
+        render_research_portal(
+            gee_ready=gee_ready,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่และ Export Composer", expanded=False):
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
+
+    elif selected_mode == "ตรวจสอบการใช้ประโยชน์ที่ดิน":
+        render_landuse_portal(
+            gee_ready=gee_ready,
+        )
+        management_panel_rendered = True
+
+        with st.expander("🗺️ แสดง/ซ่อนแผนที่และ Export Composer", expanded=False):
+            render_map_workspace(
+                Map,
+                map_layout_config,
+                roi=roi,
+                is_whole_country=is_whole_country,
+                selected_province=selected_province,
+                selected_district=selected_district,
+            )
+            render_map_export_composer(
+                Map=Map,
+                roi=roi,
+                selected_province=selected_province,
+                selected_district=selected_district,
+                is_whole_country=is_whole_country,
+            )
+
+    elif selected_mode == "พูดคุยข้อกฎหมายผังเมือง":
+        render_legal_planning_chat(
+            is_member=(current_role != "ผู้ใช้ทั่วไป"),
+        )
+        management_panel_rendered = True
+
+    elif selected_mode == "Local Data Manager":
         render_local_data_manager(
             selected_province=selected_province,
             selected_district=selected_district,
@@ -537,7 +614,16 @@ def main() -> None:
     # -----------------------------------------------------
     # 10. Render mode-specific outputs
     # -----------------------------------------------------
-    if selected_mode == "General Plan":
+    if selected_mode in {
+        "ผู้บริหารเมือง",
+        "นักวิเคราะห์ วิจัย",
+        "ตรวจสอบการใช้ประโยชน์ที่ดิน",
+        "พูดคุยข้อกฎหมายผังเมือง",
+    }:
+        # Portal landing pages are already rendered above.
+        pass
+
+    elif selected_mode == "General Plan":
         render_indicator_cards()
 
     elif selected_mode == "AI Simulation":
