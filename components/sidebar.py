@@ -46,6 +46,12 @@ def _render_invalid_asset_warning(label: str, invalid_items: list[str]) -> None:
 import streamlit as st
 from datetime import date
 from streamlit_option_menu import option_menu
+from components.access_control import (
+    available_modes_for_current_user,
+    icon_for_mode,
+    render_user_access_panel,
+    render_access_summary,
+)
 
 from config.settings import (
     THAILAND_ALL_LABEL,
@@ -256,10 +262,17 @@ def render_sidebar() -> dict:
             unsafe_allow_html=True,
         )
 
+        gee_ready = bool(st.session_state.get("gee_ready", False))
+        current_role = render_user_access_panel()
+        render_access_summary(gee_ready=gee_ready)
+
+        st.markdown("<hr style='border-color: #1E293B;'>", unsafe_allow_html=True)
+
+        available_modes = available_modes_for_current_user(gee_ready=gee_ready)
         selected_mode = option_menu(
             menu_title=None,
-            options=["General Plan", "AI Simulation", "Suitability Analysis", "Urban Heat Island", "Local Data Manager", "Import Wizard", "Candidate Ranking", "AI Recommendation", "Planning Report", "Spatial Database", "System Diagnostics", "Multi-Agent"],
-            icons=["map", "cpu", "layers", "thermometer-half", "database", "upload", "trophy", "stars", "file-earmark-text", "hdd-network", "activity", "robot"],
+            options=available_modes,
+            icons=[icon_for_mode(mode) for mode in available_modes],
             menu_icon="cast",
             default_index=0,
             styles={

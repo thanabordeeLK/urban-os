@@ -251,6 +251,20 @@ def render_system_diagnostics_panel(
                 ),
             },
             {
+                "หมวด": "GEE Auth",
+                "สถานะ": _status_icon(bool(st.session_state.get("gee_ready", False))),
+                "รายละเอียด": (
+                    f"mode={st.session_state.get('gee_auth_mode', '-')}, "
+                    f"project={(st.session_state.get('gee_auth_status') or {}).get('project_id', '-')}, "
+                    f"error={st.session_state.get('gee_error', '')[:120]}"
+                ),
+            },
+            {
+                "หมวด": "Access Control",
+                "สถานะ": _status_icon(bool(st.session_state.get("urban_os_user_role"))),
+                "รายละเอียด": f"role={st.session_state.get('urban_os_user_role', 'ผู้ใช้ทั่วไป')}",
+            },
+            {
                 "หมวด": "OpenAI / Agent",
                 "สถานะ": _status_icon(_has_secret_section("openai") or "OPENAI_API_KEY" in st.secrets if hasattr(st, "secrets") else False),
                 "รายละเอียด": "ใช้เฉพาะตอนเปิด GPT Planning Agent",
