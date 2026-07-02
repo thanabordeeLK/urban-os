@@ -14,7 +14,7 @@ def _query_role() -> str:
     except Exception:
         raw = "public"
 
-    if raw in {"member", "analyst", "research"}:
+    if raw in {"member", "analyst", "research", "legal_member"}:
         return ROLE_MEMBER
     if raw in {"admin", "backoffice"}:
         return ROLE_ADMIN
@@ -22,10 +22,18 @@ def _query_role() -> str:
 
 
 def get_current_role() -> str:
-    role = st.session_state.get("landuse_role_hint")
+    role = st.session_state.get("law_chat_role_hint")
     if role in {ROLE_PUBLIC, ROLE_MEMBER, ROLE_ADMIN}:
         return role
     return _query_role()
+
+
+def is_member(role: str | None = None) -> bool:
+    return True
+
+
+def is_admin(role: str | None = None) -> bool:
+    return (role or get_current_role()) == ROLE_ADMIN
 
 
 def render_access_panel() -> str:
@@ -37,7 +45,7 @@ def render_access_panel() -> str:
     """
 
     role = _query_role()
-    st.session_state["landuse_role_hint"] = role
+    st.session_state["law_chat_role_hint"] = role
 
     st.markdown("### 🔓 Open Workspace")
     st.caption("แอปนี้ไม่ล็อกสมาชิกภายในตัวเอง")
