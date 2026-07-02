@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import streamlit as st
 
 
 # ---------------------------------------------------------------------
-# Open-access mode
+# Research workspace mode
 # ---------------------------------------------------------------------
-# การล็อกสมาชิก/ผู้ใช้ทั่วไปให้ไปทำที่หน้า USDC City Portal กลาง
-# ไฟล์นี้คง API เดิมไว้ เพื่อไม่ให้ components/sidebar.py และ app.py พัง
-# แต่ไม่แสดงช่อง User role / Access code และไม่ gate เมนูด้วย member/admin อีกต่อไป
+# หน้า Urban OS นี้ถือเป็นพื้นที่ "นักวิเคราะห์ วิจัย" แล้ว
+# ดังนั้นไม่แสดงเมนู Portal Hub เช่น ผู้บริหารเมือง / นักวิเคราะห์ วิจัย /
+# ตรวจสอบการใช้ประโยชน์ที่ดิน / พูดคุยข้อกฎหมายผังเมือง อีกต่อไป
+#
+# การแยกผู้ใช้/สมาชิกให้ทำที่ usdc-city-portal กลาง
+# ส่วน Urban OS ให้เน้นงานแผนที่ วิเคราะห์ วิจัย และรายงาน
 # ---------------------------------------------------------------------
 
 ROLE_PUBLIC = "ผู้ใช้ทั่วไป"
@@ -24,40 +28,46 @@ PORTAL_RESEARCH = "นักวิเคราะห์ วิจัย"
 PORTAL_LANDUSE = "ตรวจสอบการใช้ประโยชน์ที่ดิน"
 PORTAL_LEGAL = "พูดคุยข้อกฎหมายผังเมือง"
 
+# รับไว้เพื่อรองรับ deep link เก่าจาก portal แต่จะ redirect เป็นเมนูวิเคราะห์แทน
 PORTAL_MODE_MAP = {
-    "executive": PORTAL_EXECUTIVE,
-    "public": PORTAL_EXECUTIVE,
-    "manager": PORTAL_EXECUTIVE,
-    "mayor": PORTAL_EXECUTIVE,
-    "research": PORTAL_RESEARCH,
-    "analyst": PORTAL_RESEARCH,
-    "analysis": PORTAL_RESEARCH,
-    "landuse": PORTAL_LANDUSE,
-    "zoning": PORTAL_LANDUSE,
-    "legal": PORTAL_LEGAL,
-    "law": PORTAL_LEGAL,
+    "executive": "General Plan",
+    "public": "General Plan",
+    "manager": "General Plan",
+    "mayor": "General Plan",
+    "research": "General Plan",
+    "analyst": "General Plan",
+    "analysis": "General Plan",
+    "landuse": "Import Wizard",
+    "zoning": "Import Wizard",
+    "legal": "Planning Report",
+    "law": "Planning Report",
     "admin": "System Diagnostics",
     "backoffice": "System Diagnostics",
 }
 
-ALL_MODES = [
-    PORTAL_EXECUTIVE,
-    PORTAL_RESEARCH,
-    PORTAL_LANDUSE,
-    PORTAL_LEGAL,
+# เมนูที่ควรแสดงใน Urban OS Research Workspace
+# ไม่รวมเมนู Portal Hub และไม่รวมเมนูแอปเฉพาะเรื่อง
+RESEARCH_WORKSPACE_MODES = [
     "General Plan",
-    "AI Simulation",
     "Suitability Analysis",
     "Urban Heat Island",
+    "AI Simulation",
     "Import Wizard",
     "Candidate Ranking",
     "AI Recommendation",
     "Planning Report",
+]
+
+# เมนูหลังบ้าน/diagnostics จะไม่แสดงในเมนูหลักของนักวิเคราะห์
+# แต่ยังคง access ได้ด้วย direct mode query หากต้องใช้แก้ระบบ
+ADMIN_UTILITY_MODES = [
     "Local Data Manager",
     "Spatial Database",
     "System Diagnostics",
     "Multi-Agent",
 ]
+
+ALL_MODES = RESEARCH_WORKSPACE_MODES + ADMIN_UTILITY_MODES
 
 GEE_REQUIRED_MODES = {
     "General Plan",
@@ -79,10 +89,21 @@ MODE_ACCESS: dict[str, ModeAccess] = {
     mode: ModeAccess(
         min_role=ROLE_PUBLIC,
         gee_required=mode in GEE_REQUIRED_MODES,
-        description="Open access; membership is handled by central portal",
+        description="Research workspace; membership is handled by central portal",
     )
     for mode in ALL_MODES
 }
+
+
+def _secret(name: str, default: str = "") -> str:
+    try:
+        value = st.secrets.get(name, None)
+        if value:
+            return str(value)
+    except Exception:
+        pass
+
+    return os.getenv(name, default)
 
 
 def _query_params() -> dict:
@@ -122,7 +143,6 @@ def _mode_from_query() -> str | None:
         return PORTAL_MODE_MAP.get(portal)
 
     if mode:
-        # accept exact Thai/English mode from URL
         for item in ALL_MODES:
             if mode == item or mode.lower() == item.lower():
                 return item
@@ -143,15 +163,29 @@ def get_current_user_role() -> str:
     return role
 
 
+def _portal_home_url() -> str:
+    return _secret("PORTAL_HOME_URL", "")
+
+
 def render_user_access_panel() -> str:
     """
-    Backward-compatible no-op.
+    Sidebar top panel.
 
-    เดิมฟังก์ชันนี้แสดง User role + Access code ใน sidebar
-    ตอนนี้ไม่แสดงอะไรแล้ว เพื่อให้สิทธิ์สมาชิกไปจัดการที่หน้า Portal กลาง
+    เดิมฟังก์ชันนี้แสดง User role + Access code
+    ตอนนี้เปลี่ยนเป็นปุ่มกลับหน้าเพจกลางเท่านั้น
     """
 
-    return get_current_user_role()
+    role = get_current_user_role()
+
+    home_url = _portal_home_url()
+    if home_url:
+        st.link_button("🏠 กลับหน้าเพจกลาง", home_url, use_container_width=True)
+    else:
+        st.markdown("### 🏠 หน้าเพจกลาง")
+        st.caption("ยังไม่ได้ตั้งค่า PORTAL_HOME_URL")
+
+    st.caption("Urban OS Research Workspace")
+    return role
 
 
 def render_access_summary(gee_ready: bool = True) -> None:
@@ -166,7 +200,7 @@ def render_access_summary(gee_ready: bool = True) -> None:
 
 def can_access_mode(mode: str, *, role: str | None = None, gee_ready: bool = True) -> tuple[bool, str]:
     """
-    Open-access check.
+    Research workspace access check.
 
     ไม่ล็อกด้วย member/admin แล้ว
     จะ block เฉพาะเมนูที่ต้องใช้ GEE เมื่อ GEE ยังไม่พร้อมเท่านั้น
@@ -181,15 +215,19 @@ def can_access_mode(mode: str, *, role: str | None = None, gee_ready: bool = Tru
 
 def available_modes_for_current_user(gee_ready: bool = True) -> list[str]:
     """
-    Return all menus that can run under the current technical state.
+    แสดงเฉพาะเมนูงานวิเคราะห์/วิจัยใน Urban OS
 
-    ไม่มีการตัดเมนูตาม member/admin แล้ว
-    ตัดเฉพาะเมนูที่ต้องใช้ GEE เมื่อ GEE ยังไม่พร้อม
+    ไม่แสดง:
+    - ผู้บริหารเมือง
+    - นักวิเคราะห์ วิจัย
+    - ตรวจสอบการใช้ประโยชน์ที่ดิน
+    - พูดคุยข้อกฎหมายผังเมือง
+    - เมนูหลังบ้าน/admin utility
     """
 
     return [
         mode
-        for mode in ALL_MODES
+        for mode in RESEARCH_WORKSPACE_MODES
         if gee_ready or mode not in GEE_REQUIRED_MODES
     ]
 
@@ -200,28 +238,30 @@ def get_default_mode_for_menu(available_modes: list[str]) -> str:
     if requested and requested in available_modes:
         return requested
 
-    # ถ้า GEE พร้อม ให้เริ่มที่ผู้บริหารเมืองเพื่อเป็นหน้าอ่านง่าย
-    if PORTAL_EXECUTIVE in available_modes:
-        return PORTAL_EXECUTIVE
+    # เน้นเริ่มจากแผนที่/ข้อมูลพื้นฐานของงานวิเคราะห์
+    if "General Plan" in available_modes:
+        return "General Plan"
+
+    if "Import Wizard" in available_modes:
+        return "Import Wizard"
+
+    if "Planning Report" in available_modes:
+        return "Planning Report"
 
     return available_modes[0] if available_modes else "Planning Report"
 
 
 def icon_for_mode(mode: str) -> str:
     icons = {
-        PORTAL_EXECUTIVE: "briefcase",
-        PORTAL_RESEARCH: "bar-chart",
-        PORTAL_LANDUSE: "map",
-        PORTAL_LEGAL: "chat-square-text",
         "General Plan": "layers",
-        "AI Simulation": "robot",
         "Suitability Analysis": "compass",
         "Urban Heat Island": "thermometer-half",
-        "Local Data Manager": "folder2-open",
+        "AI Simulation": "robot",
         "Import Wizard": "cloud-upload",
         "Candidate Ranking": "trophy",
         "AI Recommendation": "stars",
         "Planning Report": "file-earmark-text",
+        "Local Data Manager": "folder2-open",
         "Spatial Database": "database",
         "System Diagnostics": "activity",
         "Multi-Agent": "cpu",
